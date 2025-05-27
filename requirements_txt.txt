@@ -1,0 +1,24 @@
+# VNE Heuristics Framework - Core Requirements
+
+# Essential Dependencies (Currently Used)
+networkx>=2.8.0,<4.0.0        # Graph algorithms and data structures
+numpy>=1.21.0,<2.0.0          # Numerical computing
+pyyaml>=6.0.0,<7.0.0          # YAML configuration file support
+
+# Optional Dependencies (For Extended Functionality)
+# Development and Testing (Optional)
+pytest>=7.0.0,<8.0.0          # Testing framework (install when needed)
+black>=22.0.0,<24.0.0         # Code formatting (install when needed)
+
+# Future Dependencies (Add as needed)
+# matplotlib>=3.5.0,<4.0.0    # For visualization/GUI
+# pandas>=1.3.0,<3.0.0        # For data analysis
+# tkinter or PyQt6              # For GUI development
+
+# Python Version Requirement: >=3.8
+# 
+# Installation:
+# pip install -r requirements.txt
+#
+# Or minimal install:
+# pip install networkx numpy pyyaml

@@ -29,7 +29,7 @@ import importlib
 import pkgutil
 
 # Import project modules
-from .config_management import ConfigurationManager, VNEConfig, ConfigurationError, load_config_from_args
+from config_management import ConfigurationManager, VNEConfig, ConfigurationError, load_config_from_args
 from src.models.substrate import SubstrateNetwork
 from src.models.virtual_request import VirtualNetworkRequest, VNRBatch
 from src.utils.generators import (
@@ -73,7 +73,7 @@ class VNECommandLineInterface:
         """Discover available algorithm implementations."""
         try:
             # Import and register available algorithms
-            from src.algorithms.baseline.yu_2008 import YuAlgorithm
+            from src.algorithms.baseline.yu_2008_algorithm import YuAlgorithm
 
             self.available_algorithms = {
                 'yu2008': YuAlgorithm,
@@ -205,13 +205,13 @@ Examples:
     def _add_run_command(self, subparsers) -> None:
         """Add run command for algorithm execution."""
         run_parser = subparsers.add_parser('run', help='Run VNE algorithms')
-        run_parser.add_argument('--algorithm', '-a', type=str, required=True,
-                                help='Algorithm to use')
         run_parser.add_argument('--list-algorithms', action='store_true',
                                 help='List available algorithms and exit')
-        run_parser.add_argument('--substrate', type=str, required=True,
+        run_parser.add_argument('--algorithm', '-a', type=str,
+                                help='Algorithm to use')
+        run_parser.add_argument('--substrate', type=str,
                                 help='Substrate network file (CSV format)')
-        run_parser.add_argument('--vnrs', type=str, required=True,
+        run_parser.add_argument('--vnrs', type=str,
                                 help='VNR batch file (CSV format)')
         run_parser.add_argument('--mode', type=str, default='batch',
                                 choices=['batch', 'online'],
@@ -331,19 +331,50 @@ Examples:
             # Generate substrate network
             print(f"Generating substrate network with {args.nodes} nodes...")
 
-            substrate = generate_substrate_network(
-                nodes=args.nodes,
-                topology=args.topology,
-                edge_probability=args.edge_prob,
-                attachment_count=args.attachment_count,
-                cpu_range=tuple(args.cpu_range),
-                memory_range=tuple(args.memory_range),
-                bandwidth_range=tuple(args.bandwidth_range)
-            )
+            # Create actual SubstrateNetwork instead of using placeholder generator
+            from src.models.substrate import SubstrateNetwork
+            import random
+
+            substrate = SubstrateNetwork()
+
+            # Generate nodes with resources
+            for i in range(args.nodes):
+                node_id = i
+                cpu_capacity = random.randint(*args.cpu_range)
+                memory_capacity = random.randint(*args.memory_range)
+                x_coord = random.uniform(0.0, 100.0)
+                y_coord = random.uniform(0.0, 100.0)
+
+                substrate.add_node(
+                    node_id=node_id,
+                    cpu_capacity=cpu_capacity,
+                    memory_capacity=memory_capacity,
+                    x_coord=x_coord,
+                    y_coord=y_coord
+                )
+
+            # Generate edges based on topology
+            if args.topology == "erdos_renyi":
+                edges_created = 0
+                for i in range(args.nodes):
+                    for j in range(i + 1, args.nodes):
+                        if random.random() < args.edge_prob:
+                            bandwidth = random.randint(*args.bandwidth_range)
+                            delay = random.uniform(1.0, 10.0)
+                            substrate.add_link(
+                                src=i, dst=j,
+                                bandwidth_capacity=bandwidth,
+                                delay=delay
+                            )
+                            edges_created += 1
+                print(f"Created {edges_created} edges for Erdos-Renyi topology")
 
             # Save to file
             print(f"Saving substrate network to {args.save}...")
-            save_substrate_to_csv(substrate, args.save)
+            substrate.save_to_csv(
+                nodes_file=args.save.replace('.csv', '_nodes.csv'),
+                links_file=args.save.replace('.csv', '_links.csv')
+            )
 
             print(f"✓ Successfully generated substrate network: {args.save}")
             print(f"  - Nodes: {args.nodes}")
@@ -364,39 +395,101 @@ Examples:
         try:
             # Load substrate network
             print(f"Loading substrate network from {args.substrate}...")
-            substrate_data = load_substrate_from_csv(args.substrate)
+            substrate = self._load_substrate_network(args.substrate)
 
-            # Extract substrate node IDs (simplified for now)
-            substrate_nodes = [f"s{i}" for i in range(len(substrate_data['nodes']))]
+            # Get substrate node IDs
+            substrate_nodes = [str(node_id) for node_id in substrate.graph.nodes()]
+            print(f"Found {len(substrate_nodes)} substrate nodes")
 
             # Set random seed if provided
             if args.seed:
                 set_random_seed(args.seed)
                 self.logger.info(f"Random seed set to {args.seed}")
 
-            # Create generation config
-            config = NetworkGenerationConfig(
-                vnr_nodes_range=tuple(args.nodes_range),
-                vnr_topology=args.topology,
-                vnr_edge_probability=args.edge_prob,
-                vnr_cpu_ratio_range=tuple(args.cpu_ratio),
-                vnr_memory_ratio_range=tuple(args.memory_ratio),
-                vnr_bandwidth_ratio_range=tuple(args.bandwidth_ratio),
-                arrival_rate=args.arrival_rate,
-                lifetime_mean=args.lifetime_mean
-            )
-
-            # Generate VNRs
+            # Generate VNRs using our VNR creation logic
             print(f"Generating {args.count} VNRs...")
-            vnrs = generate_vnr_batch(
-                count=args.count,
-                substrate_nodes=substrate_nodes,
-                config=config
-            )
+            vnrs = []
 
-            # Save to file
+            import random
+            from src.models.virtual_request import VirtualNetworkRequest
+
+            for i in range(args.count):
+                # Generate VNR parameters
+                vnr_nodes_count = random.randint(*args.nodes_range)
+                arrival_time = random.expovariate(1.0 / args.arrival_rate) * i
+                lifetime = random.expovariate(1.0 / args.lifetime_mean)
+
+                # Create VNR
+                vnr = VirtualNetworkRequest(
+                    vnr_id=i,
+                    arrival_time=arrival_time,
+                    lifetime=lifetime
+                )
+
+                # Add virtual nodes
+                for j in range(vnr_nodes_count):
+                    cpu_req = random.randint(
+                        int(50 * args.cpu_ratio[0]),
+                        int(100 * args.cpu_ratio[1])
+                    )
+                    memory_req = random.randint(
+                        int(50 * args.memory_ratio[0]),
+                        int(100 * args.memory_ratio[1])
+                    )
+
+                    vnr.add_virtual_node(
+                        node_id=j,
+                        cpu_requirement=cpu_req,
+                        memory_requirement=memory_req
+                    )
+
+                # Add virtual links based on topology
+                if args.topology == "random" and vnr_nodes_count > 1:
+                    for src in range(vnr_nodes_count):
+                        for dst in range(src + 1, vnr_nodes_count):
+                            if random.random() < args.edge_prob:
+                                bandwidth_req = random.randint(
+                                    int(50 * args.bandwidth_ratio[0]),
+                                    int(100 * args.bandwidth_ratio[1])
+                                )
+                                vnr.add_virtual_link(
+                                    src_node=src,
+                                    dst_node=dst,
+                                    bandwidth_requirement=bandwidth_req
+                                )
+                elif args.topology == "star" and vnr_nodes_count > 1:
+                    # Star topology: connect all nodes to node 0
+                    for i in range(1, vnr_nodes_count):
+                        bandwidth_req = random.randint(
+                            int(50 * args.bandwidth_ratio[0]),
+                            int(100 * args.bandwidth_ratio[1])
+                        )
+                        vnr.add_virtual_link(
+                            src_node=0,
+                            dst_node=i,
+                            bandwidth_requirement=bandwidth_req
+                        )
+                elif args.topology == "linear" and vnr_nodes_count > 1:
+                    # Linear topology: chain of nodes
+                    for i in range(vnr_nodes_count - 1):
+                        bandwidth_req = random.randint(
+                            int(50 * args.bandwidth_ratio[0]),
+                            int(100 * args.bandwidth_ratio[1])
+                        )
+                        vnr.add_virtual_link(
+                            src_node=i,
+                            dst_node=i + 1,
+                            bandwidth_requirement=bandwidth_req
+                        )
+
+                vnrs.append(vnr)
+
+            # Save VNRs using VNRBatch
             print(f"Saving VNRs to {args.save}...")
-            save_vnrs_to_csv(vnrs, args.save)
+            from src.models.virtual_request import VNRBatch
+
+            batch = VNRBatch(vnrs, "generated_batch")
+            batch.save_to_csv(args.save.replace('.csv', ''))
 
             print(f"✓ Successfully generated VNR batch: {args.save}")
             print(f"  - Count: {args.count}")
@@ -415,9 +508,20 @@ Examples:
     def _handle_run_command(self, args) -> int:
         """Handle algorithm execution."""
         try:
-            # Handle list algorithms
+            # Handle list algorithms first (doesn't need other arguments)
             if args.list_algorithms:
                 return self._list_algorithms()
+
+            # Validate required arguments for algorithm execution
+            if not args.algorithm:
+                print("Error: --algorithm is required for algorithm execution")
+                return 1
+            if not args.substrate:
+                print("Error: --substrate is required for algorithm execution")
+                return 1
+            if not args.vnrs:
+                print("Error: --vnrs is required for algorithm execution")
+                return 1
 
             # Validate algorithm
             if args.algorithm not in self.available_algorithms:
@@ -461,9 +565,33 @@ Examples:
             else:
                 output_path = Path(args.output)
 
+            # Convert results to JSON-serializable format
+            serializable_results = []
+            for result in results:
+                # Convert tuple keys in link_mapping to strings
+                link_mapping_serializable = {}
+                for (src, dst), path in result.link_mapping.items():
+                    key = f"{src}-{dst}"
+                    link_mapping_serializable[key] = path
+
+                serializable_result = {
+                    'vnr_id': result.vnr_id,
+                    'success': result.success,
+                    'node_mapping': result.node_mapping,
+                    'link_mapping': link_mapping_serializable,
+                    'revenue': result.revenue,
+                    'cost': result.cost,
+                    'execution_time': result.execution_time,
+                    'failure_reason': result.failure_reason,
+                    'timestamp': result.timestamp,
+                    'algorithm_name': result.algorithm_name,
+                    'metadata': result.metadata
+                }
+                serializable_results.append(serializable_result)
+
             # Save results
             print(f"Saving results to {output_path}...")
-            save_results_to_file(results, output_path, args.format)
+            save_results_to_file(serializable_results, output_path, args.format)
 
             # Print summary
             self._print_execution_summary(results, execution_time, args.algorithm)
@@ -573,70 +701,59 @@ Examples:
 
     def _load_substrate_network(self, filepath: str) -> SubstrateNetwork:
         """Load substrate network from file."""
-        # This is a placeholder - in real implementation,
-        # we'd create a proper SubstrateNetwork from the CSV data
-        substrate_data = load_substrate_from_csv(filepath)
+        try:
+            substrate = SubstrateNetwork()
 
-        # For now, return a mock substrate network
-        # In actual implementation, we'd properly construct the SubstrateNetwork
-        substrate = SubstrateNetwork()
+            # Handle different file naming conventions
+            if filepath.endswith('.csv'):
+                # Try the naming from our generation first
+                base_name = filepath.replace('.csv', '')
+                nodes_file = f"{base_name}_nodes.csv"
+                links_file = f"{base_name}_links.csv"
 
-        # Add nodes from loaded data
-        for node_data in substrate_data['nodes']:
-            substrate.add_node(
-                node_id=int(node_data['node_id'].replace('s', '')),
-                cpu_capacity=node_data['cpu_capacity'],
-                memory_capacity=node_data['memory_capacity'],
-                x_coord=node_data.get('x_coordinate', 0.0),
-                y_coord=node_data.get('y_coordinate', 0.0)
-            )
+                # Check if files exist
+                from pathlib import Path
+                if not Path(nodes_file).exists() or not Path(links_file).exists():
+                    # Try alternative naming (for backward compatibility)
+                    nodes_file = f"{filepath}_nodes.csv"
+                    links_file = f"{filepath}_links.csv"
 
-        # Add links from loaded data
-        for link_data in substrate_data['links']:
-            substrate.add_link(
-                src=int(link_data['source_node'].replace('s', '')),
-                dst=int(link_data['target_node'].replace('s', '')),
-                bandwidth_capacity=link_data['bandwidth_capacity'],
-                delay=link_data.get('delay', 1.0),
-                cost=link_data.get('cost', 1.0)
-            )
+                    if not Path(nodes_file).exists() or not Path(links_file).exists():
+                        raise FileNotFoundError(f"Could not find substrate files. Expected either:\n"
+                                                f"  - {base_name}_nodes.csv and {base_name}_links.csv\n"
+                                                f"  - {filepath}_nodes.csv and {filepath}_links.csv")
+            else:
+                nodes_file = f"{filepath}_nodes.csv"
+                links_file = f"{filepath}_links.csv"
 
-        return substrate
+            print(f"Loading nodes from: {nodes_file}")
+            print(f"Loading links from: {links_file}")
+
+            substrate.load_from_csv(nodes_file, links_file)
+            return substrate
+
+        except Exception as e:
+            self.logger.error(f"Failed to load substrate network: {e}")
+            raise Exception(f"Failed to load substrate network: {e}")
 
     def _load_vnr_batch(self, filepath: str) -> List[VirtualNetworkRequest]:
         """Load VNR batch from file."""
-        # This is a placeholder - in real implementation,
-        # we'd create proper VirtualNetworkRequest objects from the CSV data
-        vnr_data = load_vnrs_from_csv(filepath)
+        try:
+            from src.models.virtual_request import VNRBatch
 
-        vnrs = []
-        for vnr_info in vnr_data:
-            vnr = VirtualNetworkRequest(
-                vnr_id=int(vnr_info['vnr_id']),
-                arrival_time=vnr_info['arrival_time'],
-                lifetime=vnr_info['lifetime'],
-                priority=vnr_info.get('priority', 1)
-            )
+            # Determine base filename
+            if filepath.endswith('.csv'):
+                base_name = filepath.replace('.csv', '')
+            else:
+                base_name = filepath
 
-            # Add virtual nodes
-            for node_id, node_data in vnr_info['virtual_nodes'].items():
-                vnr.add_virtual_node(
-                    node_id=int(node_id),
-                    cpu_requirement=node_data['cpu_requirement'],
-                    memory_requirement=node_data['memory_requirement']
-                )
+            # Load using VNRBatch
+            batch = VNRBatch.load_from_csv(base_name)
+            return batch.vnrs
 
-            # Add virtual links
-            for link_id, link_data in vnr_info['virtual_links'].items():
-                vnr.add_virtual_link(
-                    src_node=int(link_data['source_node']),
-                    dst_node=int(link_data['target_node']),
-                    bandwidth_requirement=link_data['bandwidth_requirement']
-                )
-
-            vnrs.append(vnr)
-
-        return vnrs
+        except Exception as e:
+            self.logger.error(f"Failed to load VNR batch: {e}")
+            raise Exception(f"Failed to load VNR batch: {e}")
 
     def _dict_to_embedding_result(self, data: Dict[str, Any]) -> EmbeddingResult:
         """Convert dictionary to EmbeddingResult object."""
@@ -681,13 +798,30 @@ Examples:
         print(f"Total execution time: {execution_time:.2f} seconds")
         print(f"Average time per VNR: {execution_time / total:.4f} seconds")
 
-        # Show sample results
+        # Show sample results in the specified format
         print(f"\nSample results:")
         for i, result in enumerate(results[:5]):
-            status = "✓ accepted" if result.success else "✗ rejected"
-            reason = f", reason={result.failure_reason}" if result.failure_reason else ""
-            print(f"  VNR {result.vnr_id}: {status}, revenue={result.revenue:.2f}, "
-                  f"cost={result.cost:.2f}{reason}")
+            if result.success:
+                # Format node mapping
+                node_mapping_str = "{" + ", ".join([f"{k}->{v}" for k, v in result.node_mapping.items()]) + "}"
+
+                # Format link mapping
+                link_mapping_parts = []
+                for (src, dst), path in result.link_mapping.items():
+                    if len(path) > 1:
+                        path_str = "->".join(path)
+                        link_mapping_parts.append(f"({src},{dst})->[{path_str}]")
+                    else:
+                        # Single node path (virtual link collapses to same substrate node)
+                        link_mapping_parts.append(f"({src},{dst})->[{path[0]}]")
+
+                link_mapping_str = "{" + ", ".join(link_mapping_parts) + "}"
+
+                print(f"  VNR {result.vnr_id}: accepted, nodes mapped as {node_mapping_str}, "
+                      f"links mapped as {link_mapping_str}, revenue={result.revenue:.2f}, cost={result.cost:.2f}")
+            else:
+                reason = f", reason={result.failure_reason}" if result.failure_reason else ""
+                print(f"  VNR {result.vnr_id}: rejected{reason}")
 
         if len(results) > 5:
             print(f"  ... and {len(results) - 5} more")

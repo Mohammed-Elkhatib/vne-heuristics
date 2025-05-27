@@ -385,23 +385,37 @@ class ConfigurationManager:
         # Create formatter
         formatter = logging.Formatter(log_config.format, log_config.date_format)
         
-        # Console handler
+        # Console handler with UTF-8 encoding
         if not self.config.quiet:
             console_handler = logging.StreamHandler()
             console_handler.setLevel(getattr(logging, log_config.console_level))
             console_handler.setFormatter(formatter)
+
+            # Set encoding to UTF-8 to handle Unicode characters
+            import sys
+            if hasattr(console_handler.stream, 'reconfigure'):
+                try:
+                    console_handler.stream.reconfigure(encoding='utf-8')
+                except:
+                    pass  # Fallback if reconfigure fails
+
             root_logger.addHandler(console_handler)
-        
-        # File handler with rotation
-        from logging.handlers import RotatingFileHandler
-        file_handler = RotatingFileHandler(
-            log_config.log_file,
-            maxBytes=log_config.max_file_size_mb * 1024 * 1024,
-            backupCount=log_config.backup_count
-        )
-        file_handler.setLevel(getattr(logging, log_config.file_level))
-        file_handler.setFormatter(formatter)
-        root_logger.addHandler(file_handler)
+
+        # File handler with rotation and UTF-8 encoding
+        try:
+            from logging.handlers import RotatingFileHandler
+            file_handler = RotatingFileHandler(
+                log_config.log_file,
+                maxBytes=log_config.max_file_size_mb * 1024 * 1024,
+                backupCount=log_config.backup_count,
+                encoding='utf-8'  # Explicitly set UTF-8 encoding for file
+            )
+            file_handler.setLevel(getattr(logging, log_config.file_level))
+            file_handler.setFormatter(formatter)
+            root_logger.addHandler(file_handler)
+        except Exception as e:
+            # If file handler fails, continue without it
+            print(f"Warning: Could not setup file logging: {e}")
     
     def save_config(self, output_file: Union[str, Path], format: str = "yaml") -> None:
         """

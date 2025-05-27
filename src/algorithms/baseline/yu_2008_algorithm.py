@@ -438,8 +438,9 @@ class YuAlgorithm(BaseAlgorithm):
             
             if ssrc == sdst:
                 # Virtual link between nodes mapped to same substrate node
+                # No actual substrate link needed - this is valid
                 self.logger.debug(f"Virtual link ({vsrc}, {vdst}) maps to same substrate node {ssrc}")
-                link_mapping[(str(vsrc), str(vdst))] = [ssrc, ssrc]
+                link_mapping[(str(vsrc), str(vdst))] = [ssrc]
                 continue
             
             # Find suitable path(s)

@@ -72,19 +72,18 @@ class VNECommandLineInterface:
     def _discover_algorithms(self) -> None:
         """Discover available algorithm implementations."""
         try:
-            # Import algorithm modules and register available algorithms
-            algorithms_package = 'src.algorithms'
+            # Import and register available algorithms
+            from src.algorithms.baseline.yu_2008 import YuAlgorithm
 
-            # For now, we'll manually register algorithms as they're implemented
-            # In the future, this could use dynamic discovery
             self.available_algorithms = {
-                # Will be populated as algorithms are implemented
-                # 'yu2008': Yu2008Algorithm,
-                # 'baseline1': Baseline1Algorithm,
+                'yu2008': YuAlgorithm,
             }
 
             self.logger.debug(f"Discovered {len(self.available_algorithms)} algorithms")
 
+        except ImportError as e:
+            self.logger.warning(f"Could not import algorithms: {e}")
+            self.available_algorithms = {}
         except Exception as e:
             self.logger.warning(f"Algorithm discovery failed: {e}")
             self.available_algorithms = {}

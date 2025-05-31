@@ -336,7 +336,10 @@ class VNRBatch:
             with open(metadata_file, 'r', newline='') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    vnr_id = int(row['vnr_id'])
+                    try:
+                        vnr_id = int(row['vnr_id'])
+                    except ValueError:
+                        vnr_id = str(row['vnr_id'])
                     holding_time = float(row['holding_time']) if float(row['holding_time']) != -1 else float('inf')
                     vnr_data[vnr_id] = {
                         'arrival_time': float(row['arrival_time']),
@@ -359,7 +362,10 @@ class VNRBatch:
             with open(nodes_file, 'r', newline='') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    vnr_id = int(row['vnr_id'])
+                    try:
+                        vnr_id = int(row['vnr_id'])
+                    except ValueError:
+                        vnr_id = str(row['vnr_id'])
                     if vnr_id in vnrs_dict:
                         constraints = json.loads(row['constraints']) if row['constraints'] else {}
                         vnrs_dict[vnr_id].add_virtual_node(
@@ -373,7 +379,10 @@ class VNRBatch:
             with open(links_file, 'r', newline='') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    vnr_id = int(row['vnr_id'])
+                    try:
+                        vnr_id = int(row['vnr_id'])
+                    except ValueError:
+                        vnr_id = str(row['vnr_id'])
                     if vnr_id in vnrs_dict:
                         constraints = json.loads(row['constraints']) if row['constraints'] else {}
                         vnrs_dict[vnr_id].add_virtual_link(

@@ -536,10 +536,21 @@ class SubstrateNetwork:
         total_bandwidth = sum(edges[e]['resources'].bandwidth_capacity for e in edges)
         used_bandwidth = sum(edges[e]['resources'].bandwidth_used for e in edges)
 
+        # FIX: Handle empty graph connectivity check
+        is_connected = False
+        if len(nodes) > 1:  # Only check connectivity if we have multiple nodes
+            if not self.graph.is_directed():
+                is_connected = nx.is_connected(self.graph)
+            else:
+                is_connected = nx.is_weakly_connected(self.graph)
+        elif len(nodes) == 1:  # Single node is trivially connected
+            is_connected = True
+        # Empty graph (len(nodes) == 0) remains False
+
         stats = {
             'node_count': len(nodes),
             'link_count': len(edges),
-            'is_connected': nx.is_connected(self.graph) if not self.graph.is_directed() else nx.is_weakly_connected(self.graph),
+            'is_connected': is_connected,  # Fixed connectivity check
             'average_degree': sum(dict(self.graph.degree()).values()) / len(nodes) if nodes else 0,
             'total_cpu': total_cpu,
             'used_cpu': used_cpu,

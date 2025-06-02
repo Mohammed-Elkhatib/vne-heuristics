@@ -11,7 +11,6 @@ import logging
 import traceback
 import tempfile
 import os
-from pathlib import Path
 
 # Configure logging
 logging.basicConfig(

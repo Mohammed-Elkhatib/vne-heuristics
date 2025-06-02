@@ -6,7 +6,7 @@ with known examples and visual verification.
 """
 
 import sys
-from typing import List
+
 
 def manual_metrics_validation():
     """Manual validation of metrics with step-by-step verification."""

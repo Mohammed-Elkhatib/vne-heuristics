@@ -5,10 +5,6 @@ These tests ensure VNE literature compliance and validate our clean architecture
 """
 
 import unittest
-import tempfile
-import shutil
-from pathlib import Path
-from unittest.mock import Mock, patch
 import logging
 
 # Import our VNE modules

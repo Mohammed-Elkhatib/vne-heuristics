@@ -5,7 +5,6 @@ Generate command implementation using proper generator modules.
 import logging
 import random
 from pathlib import Path
-
 from .base_command import BaseCommand
 from cli.exceptions import CommandError, FileError
 

@@ -4,6 +4,7 @@ Config command implementation.
 
 from .base_command import BaseCommand
 
+
 class ConfigCommand(BaseCommand):
     """Command for configuration management."""
 

@@ -1,101 +1,124 @@
 """
-Dynamic algorithm discovery and registration system for VNE algorithms.
-Fixed version with proper error handling for packages without __file__.
+Algorithm discovery with robust error handling.
 """
 
 import logging
 import importlib
 import inspect
+import time
 from typing import Dict, Type, List, Optional
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 
+class AlgorithmRegistryError(Exception):
+    """Exception raised for algorithm registry errors."""
+    pass
+
+
 class AlgorithmRegistry:
-    """Registry for VNE algorithms with dynamic discovery capabilities."""
+    """Enhanced registry for VNE algorithms with robust discovery."""
 
     def __init__(self):
-        """Initialize the algorithm registry."""
+        """Initialize the algorithm registry with enhanced error handling."""
         self._algorithms: Dict[str, Type] = {}
         self._metadata: Dict[str, Dict] = {}
+        self._discovery_errors: List[str] = []
         self.logger = logging.getLogger(__name__)
 
-        # Perform initial discovery
+        # Perform initial discovery with error tracking
         self._discover_algorithms()
 
     def _discover_algorithms(self) -> None:
-        """Automatically discover and register available algorithms."""
-        self.logger.debug("Starting algorithm discovery")
+        """Automatically discover and register available algorithms with error tracking."""
+        self.logger.debug("Starting enhanced algorithm discovery")
 
-        # Standard algorithm locations
+        # Standard algorithm locations with fallback support
         algorithm_packages = [
             'src.algorithms.baseline',
             'src.algorithms.heuristic',
             'src.algorithms.metaheuristic',
+            'src.algorithms',  # Fallback to main algorithms package
         ]
 
         discovered_count = 0
-
         for package_name in algorithm_packages:
             try:
-                discovered_count += self._discover_package_algorithms(package_name)
-            except ImportError:
-                self.logger.debug(f"Package {package_name} not found")
+                count = self._discover_package_algorithms(package_name)
+                discovered_count += count
+                if count > 0:
+                    self.logger.debug(f"Discovered {count} algorithms in {package_name}")
+            except ImportError as e:
+                self._discovery_errors.append(f"Package {package_name} not found: {e}")
+                self.logger.debug(f"Package {package_name} not available")
             except Exception as e:
+                self._discovery_errors.append(f"Error in package {package_name}: {e}")
                 self.logger.warning(f"Error discovering algorithms in {package_name}: {e}")
 
-        # Fallback: Discover known algorithms directly
+        # Fallback: Try known algorithms directly
         if discovered_count == 0:
-            self._discover_fallback_algorithms()
+            self.logger.info("No algorithms found via package discovery, trying fallback discovery")
+            discovered_count = self._discover_fallback_algorithms()
 
-        self.logger.info(f"Discovered {len(self._algorithms)} algorithms")
+        if discovered_count == 0:
+            self.logger.warning("No algorithms discovered. Check if algorithm modules are properly installed.")
+            # Register a dummy algorithm for testing
+            self._register_dummy_algorithm()
+        else:
+            self.logger.info(f"Algorithm discovery completed: {discovered_count} algorithms registered")
 
     def _discover_package_algorithms(self, package_name: str) -> int:
-        """Discover algorithms in a specific package."""
+        """Discover algorithms in a specific package with enhanced error handling."""
         try:
             package = importlib.import_module(package_name)
-
-            # Check if package has a valid __file__ attribute
-            if not hasattr(package, '__file__') or package.__file__ is None:
-                self.logger.debug(f"Package {package_name} has no __file__ attribute, skipping directory scan")
-                return 0
-
-            package_path = Path(package.__file__).parent
-
-            # Verify the path exists
-            if not package_path.exists():
-                self.logger.debug(f"Package path {package_path} does not exist")
-                return 0
-
             discovered = 0
-            for py_file in package_path.glob("*.py"):
-                if py_file.name.startswith('_'):
-                    continue
 
-                module_name = f"{package_name}.{py_file.stem}"
-                discovered += self._discover_module_algorithms(module_name)
+            # Try to get package path
+            package_path = None
+            if hasattr(package, '__file__') and package.__file__:
+                package_path = Path(package.__file__).parent
+            elif hasattr(package, '__path__'):
+                # Handle namespace packages
+                package_path = Path(next(iter(package.__path__)))
+
+            if package_path and package_path.exists():
+                # Scan directory for Python files
+                for py_file in package_path.glob("*.py"):
+                    if py_file.name.startswith('_'):
+                        continue
+
+                    module_name = f"{package_name}.{py_file.stem}"
+                    try:
+                        discovered += self._discover_module_algorithms(module_name)
+                    except Exception as e:
+                        self.logger.debug(f"Could not discover algorithms in {module_name}: {e}")
+            else:
+                # Try to discover from module attributes directly
+                discovered = self._discover_module_algorithms(package_name)
 
             return discovered
 
         except ImportError:
-            self.logger.debug(f"Could not import package {package_name}")
-            return 0
+            raise  # Re-raise for caller to handle
         except Exception as e:
             self.logger.debug(f"Error discovering package {package_name}: {e}")
             return 0
 
     def _discover_module_algorithms(self, module_name: str) -> int:
-        """Discover algorithms in a specific module."""
+        """Discover algorithms in a specific module with enhanced error handling."""
         try:
             module = importlib.import_module(module_name)
             discovered = 0
 
             for name, obj in inspect.getmembers(module):
-                if self._is_algorithm_class(obj):
-                    algorithm_name = self._extract_algorithm_name(name, obj)
-                    self._register_discovered_algorithm(algorithm_name, obj, module_name)
-                    discovered += 1
+                try:
+                    if self._is_algorithm_class(obj):
+                        algorithm_name = self._extract_algorithm_name(name, obj)
+                        self._register_discovered_algorithm(algorithm_name, obj, module_name)
+                        discovered += 1
+                except Exception as e:
+                    self.logger.debug(f"Could not register {name} from {module_name}: {e}")
 
             return discovered
 
@@ -106,12 +129,15 @@ class AlgorithmRegistry:
             self.logger.debug(f"Error discovering algorithms in {module_name}: {e}")
             return 0
 
-    def _discover_fallback_algorithms(self) -> None:
-        """Fallback discovery for known algorithms."""
+    def _discover_fallback_algorithms(self) -> int:
+        """Fallback discovery for known algorithms with enhanced error handling."""
         fallback_algorithms = [
             ('yu2008', 'src.algorithms.baseline.yu_2008_algorithm', 'YuAlgorithm'),
+            ('greedy', 'src.algorithms.heuristic.greedy_algorithm', 'GreedyAlgorithm'),
+            ('random', 'src.algorithms.baseline.random_algorithm', 'RandomAlgorithm'),
         ]
 
+        discovered = 0
         for name, module_name, class_name in fallback_algorithms:
             try:
                 module = importlib.import_module(module_name)
@@ -119,43 +145,116 @@ class AlgorithmRegistry:
 
                 if self._is_algorithm_class(algorithm_class):
                     self._register_discovered_algorithm(name, algorithm_class, module_name)
+                    discovered += 1
                     self.logger.debug(f"Fallback discovery successful for {name}")
 
             except (ImportError, AttributeError) as e:
                 self.logger.debug(f"Could not load fallback algorithm {name}: {e}")
+            except Exception as e:
+                self.logger.debug(f"Error loading fallback algorithm {name}: {e}")
+
+        return discovered
+
+    def _register_dummy_algorithm(self) -> None:
+        """Register a dummy algorithm for testing when no real algorithms are found."""
+        try:
+            # Create a minimal dummy algorithm class
+            from src.algorithms.base_algorithm import BaseAlgorithm, EmbeddingResult
+
+            class DummyAlgorithm(BaseAlgorithm):
+                def __init__(self):
+                    super().__init__("Dummy Algorithm (Testing)")
+
+                def _embed_single_vnr(self, vnr, substrate):
+                    return EmbeddingResult(
+                        vnr_id=str(vnr.vnr_id),
+                        success=False,
+                        node_mapping={},
+                        link_mapping={},
+                        revenue=0.0,
+                        cost=0.0,
+                        execution_time=0.0,
+                        failure_reason="Dummy algorithm - always fails"
+                    )
+
+                def _cleanup_failed_embedding(self, vnr, substrate, result):
+                    pass  # No cleanup needed for dummy
+
+            self._algorithms['dummy'] = DummyAlgorithm
+            self._metadata['dummy'] = {
+                'class_name': 'DummyAlgorithm',
+                'module': 'built-in',
+                'discovery_method': 'fallback_dummy',
+                'description': 'Dummy algorithm for testing when no real algorithms are available'
+            }
+
+            self.logger.info("Registered dummy algorithm for testing")
+
+        except Exception as e:
+            self.logger.warning(f"Could not register dummy algorithm: {e}")
 
     def _is_algorithm_class(self, obj) -> bool:
-        """Check if an object is a valid algorithm class."""
+        """Check if an object is a valid algorithm class with enhanced validation."""
         try:
             from src.algorithms.base_algorithm import BaseAlgorithm
+
             return (
                 inspect.isclass(obj) and
                 issubclass(obj, BaseAlgorithm) and
                 obj is not BaseAlgorithm and
-                not inspect.isabstract(obj)
+                not inspect.isabstract(obj) and
+                hasattr(obj, '_embed_single_vnr') and
+                hasattr(obj, '_cleanup_failed_embedding')
             )
         except ImportError:
+            self.logger.debug("BaseAlgorithm not available for validation")
+            return False
+        except Exception as e:
+            self.logger.debug(f"Error validating algorithm class: {e}")
             return False
 
     def _extract_algorithm_name(self, class_name: str, algorithm_class: Type) -> str:
-        """Extract algorithm name from class."""
-        # Try to get name from class attribute
+        """Extract algorithm name from class with enhanced name handling."""
+        # Try to get name from class attribute first
         if hasattr(algorithm_class, 'ALGORITHM_NAME'):
             return algorithm_class.ALGORITHM_NAME
 
+        if hasattr(algorithm_class, 'algorithm_name'):
+            return algorithm_class.algorithm_name
+
         # Convert class name to algorithm name
         name = class_name.lower()
-        if name.endswith('algorithm'):
-            name = name[:-9]  # Remove 'algorithm' suffix
+
+        # Remove common suffixes
+        suffixes = ['algorithm', 'algo', 'embedding', 'embedder']
+        for suffix in suffixes:
+            if name.endswith(suffix):
+                name = name[:-len(suffix)]
+                break
+
+        # Handle empty names
+        if not name:
+            name = class_name.lower()
+
         return name
 
     def _register_discovered_algorithm(self, name: str, algorithm_class: Type, module_name: str) -> None:
-        """Register a discovered algorithm."""
+        """Register a discovered algorithm with enhanced metadata."""
+        # Handle name conflicts
+        if name in self._algorithms:
+            original_name = name
+            counter = 1
+            while name in self._algorithms:
+                name = f"{original_name}_{counter}"
+                counter += 1
+            self.logger.warning(f"Algorithm name conflict: renamed {original_name} to {name}")
+
         self._algorithms[name] = algorithm_class
         self._metadata[name] = {
             'class_name': algorithm_class.__name__,
             'module': module_name,
-            'discovery_method': 'automatic'
+            'discovery_method': 'automatic',
+            'description': getattr(algorithm_class, '__doc__', '').split('\n')[0] if algorithm_class.__doc__ else 'No description available'
         }
 
         self.logger.debug(f"Registered algorithm: {name} ({algorithm_class.__name__})")
@@ -165,13 +264,132 @@ class AlgorithmRegistry:
         return self._algorithms.copy()
 
     def get_algorithm(self, name: str) -> Optional[Type]:
-        """Get a specific algorithm by name."""
-        return self._algorithms.get(name)
+        """Get a specific algorithm by name with case-insensitive lookup."""
+        # Try exact match first
+        if name in self._algorithms:
+            return self._algorithms[name]
+
+        # Try case-insensitive match
+        for algo_name, algo_class in self._algorithms.items():
+            if algo_name.lower() == name.lower():
+                return algo_class
+
+        return None
 
     def list_algorithms(self) -> List[str]:
         """Get list of algorithm names."""
         return list(self._algorithms.keys())
 
     def is_available(self, name: str) -> bool:
-        """Check if an algorithm is available."""
-        return name in self._algorithms
+        """Check if an algorithm is available with case-insensitive lookup."""
+        return self.get_algorithm(name) is not None
+
+    def get_algorithm_metadata(self, name: str) -> Optional[Dict]:
+        """Get metadata for a specific algorithm."""
+        # Handle case-insensitive lookup
+        for algo_name, metadata in self._metadata.items():
+            if algo_name.lower() == name.lower():
+                return metadata.copy()
+        return None
+
+    def get_discovery_errors(self) -> List[str]:
+        """Get list of errors encountered during discovery."""
+        return self._discovery_errors.copy()
+
+    def refresh_algorithms(self) -> int:
+        """Refresh algorithm discovery and return count of newly discovered algorithms."""
+        old_count = len(self._algorithms)
+        self._algorithms.clear()
+        self._metadata.clear()
+        self._discovery_errors.clear()
+
+        self._discover_algorithms()
+
+        new_count = len(self._algorithms)
+        self.logger.info(f"Algorithm refresh completed: {new_count} algorithms (was {old_count})")
+        return new_count
+
+## 3. Updated main.py imports section
+
+# Add this to the top of main.py to handle import errors gracefully
+try:
+    from cli.commands import (
+        GenerateCommand,
+        RunCommand,
+        MetricsCommand,
+        ConfigCommand
+    )
+except ImportError as e:
+    print(f"Warning: Could not import all commands: {e}")
+    print("Some functionality may be limited.")
+
+    # Define minimal fallback commands
+    class FallbackCommand:
+        def __init__(self, cli):
+            self.cli = cli
+        def execute(self, args):
+            print("This command is not available due to import issues.")
+            return 1
+
+    GenerateCommand = RunCommand = MetricsCommand = ConfigCommand = FallbackCommand
+
+## 4. Enhanced progress reporter integration
+
+class EnhancedProgressReporter:
+    """Enhanced progress reporting with better integration."""
+
+    def __init__(self):
+        self._enabled = False
+        self._interval = 10
+        self._start_time = None
+        self._last_report_time = None
+        self._last_report_count = 0
+
+    def initialize(self, enabled: bool = True, interval: int = 10) -> None:
+        """Initialize with better defaults."""
+        self._enabled = enabled
+        self._interval = max(1, interval)  # Ensure minimum interval
+        logger.debug(f"Progress reporting: {'enabled' if enabled else 'disabled'}")
+
+    def update_with_context(self, current: int, total: int,
+                           description: str = "Processing",
+                           extra_info: str = None) -> None:
+        """Enhanced update with additional context."""
+        if not self._enabled:
+            return
+
+        if current % self._interval == 0 or current == total:
+            self._report_progress_enhanced(current, total, description, extra_info)
+
+    def _report_progress_enhanced(self, current: int, total: int,
+                                 description: str, extra_info: str = None) -> None:
+        """Enhanced progress reporting with more context."""
+        if self._start_time is None:
+            return
+
+        now = time.time()
+        elapsed = now - self._start_time
+        percentage = (current / total) * 100 if total > 0 else 0
+
+        # Calculate rate
+        rate_info = ""
+        if elapsed > 0:
+            rate = current / elapsed
+            rate_info = f", {rate:.1f} items/s"
+
+            # Estimate remaining time
+            if current > 0 and current < total:
+                remaining_items = total - current
+                eta_seconds = remaining_items / rate
+                eta_info = f", ETA: {eta_seconds:.0f}s"
+            else:
+                eta_info = ""
+        else:
+            eta_info = ""
+
+        # Build message
+        message = f"{description}: {current}/{total} ({percentage:.1f}%{rate_info}{eta_info})"
+        if extra_info:
+            message += f" - {extra_info}"
+
+        logger.info(message)

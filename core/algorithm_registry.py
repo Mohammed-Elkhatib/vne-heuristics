@@ -1,11 +1,13 @@
 """
 Algorithm discovery with robust error handling.
+
+This module provides automatic discovery and registration of VNE algorithms
+from the algorithms package, with fallback mechanisms for known algorithms.
 """
 
 import logging
 import importlib
 import inspect
-import time
 from typing import Dict, Type, List, Optional
 from pathlib import Path
 
@@ -308,88 +310,3 @@ class AlgorithmRegistry:
         new_count = len(self._algorithms)
         self.logger.info(f"Algorithm refresh completed: {new_count} algorithms (was {old_count})")
         return new_count
-
-## 3. Updated main.py imports section
-
-# Add this to the top of main.py to handle import errors gracefully
-try:
-    from cli.commands import (
-        GenerateCommand,
-        RunCommand,
-        MetricsCommand,
-        ConfigCommand
-    )
-except ImportError as e:
-    print(f"Warning: Could not import all commands: {e}")
-    print("Some functionality may be limited.")
-
-    # Define minimal fallback commands
-    class FallbackCommand:
-        def __init__(self, cli):
-            self.cli = cli
-        def execute(self, args):
-            print("This command is not available due to import issues.")
-            return 1
-
-    GenerateCommand = RunCommand = MetricsCommand = ConfigCommand = FallbackCommand
-
-## 4. Enhanced progress reporter integration
-
-class EnhancedProgressReporter:
-    """Enhanced progress reporting with better integration."""
-
-    def __init__(self):
-        self._enabled = False
-        self._interval = 10
-        self._start_time = None
-        self._last_report_time = None
-        self._last_report_count = 0
-
-    def initialize(self, enabled: bool = True, interval: int = 10) -> None:
-        """Initialize with better defaults."""
-        self._enabled = enabled
-        self._interval = max(1, interval)  # Ensure minimum interval
-        logger.debug(f"Progress reporting: {'enabled' if enabled else 'disabled'}")
-
-    def update_with_context(self, current: int, total: int,
-                           description: str = "Processing",
-                           extra_info: str = None) -> None:
-        """Enhanced update with additional context."""
-        if not self._enabled:
-            return
-
-        if current % self._interval == 0 or current == total:
-            self._report_progress_enhanced(current, total, description, extra_info)
-
-    def _report_progress_enhanced(self, current: int, total: int,
-                                 description: str, extra_info: str = None) -> None:
-        """Enhanced progress reporting with more context."""
-        if self._start_time is None:
-            return
-
-        now = time.time()
-        elapsed = now - self._start_time
-        percentage = (current / total) * 100 if total > 0 else 0
-
-        # Calculate rate
-        rate_info = ""
-        if elapsed > 0:
-            rate = current / elapsed
-            rate_info = f", {rate:.1f} items/s"
-
-            # Estimate remaining time
-            if current > 0 and current < total:
-                remaining_items = total - current
-                eta_seconds = remaining_items / rate
-                eta_info = f", ETA: {eta_seconds:.0f}s"
-            else:
-                eta_info = ""
-        else:
-            eta_info = ""
-
-        # Build message
-        message = f"{description}: {current}/{total} ({percentage:.1f}%{rate_info}{eta_info})"
-        if extra_info:
-            message += f" - {extra_info}"
-
-        logger.info(message)

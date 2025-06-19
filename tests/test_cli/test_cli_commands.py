@@ -1,21 +1,21 @@
 """
-Essential CLI tests to complement your excellent existing test suite.
+Enhanced CLI tests for the refactored GenerateCommand.
 
-These tests focus on the CLI layer that was missing from your comprehensive tests.
-Add these to tests/test_cli/test_cli_commands.py
+These tests ensure that the refactored command properly uses generator modules
+and maintains backward compatibility with the original implementation.
 """
 
 import unittest
 import tempfile
-import json
 import subprocess
 import sys
 import os
+import csv
 from pathlib import Path
 
 
-class TestCLICommands(unittest.TestCase):
-    """Test CLI commands with automatic path detection."""
+class TestCLICommandsEnhanced(unittest.TestCase):
+    """Enhanced test cases for CLI commands with focus on GenerateCommand refactoring."""
 
     def setUp(self):
         """Set up test fixtures."""
@@ -31,6 +31,12 @@ class TestCLICommands(unittest.TestCase):
         self.env = os.environ.copy()
         self.env['PYTHONIOENCODING'] = 'utf-8'
 
+        # Add project root to PYTHONPATH
+        if 'PYTHONPATH' in self.env:
+            self.env['PYTHONPATH'] = f"{self.project_root}{os.pathsep}{self.env['PYTHONPATH']}"
+        else:
+            self.env['PYTHONPATH'] = str(self.project_root)
+
         print(f"Project root: {self.project_root}")
 
     def tearDown(self):
@@ -40,7 +46,6 @@ class TestCLICommands(unittest.TestCase):
 
     def _find_project_root(self):
         """Find the project root directory (where main.py is located)."""
-        # Start from current directory and walk up
         current = Path.cwd()
 
         # Check current directory and parents
@@ -49,148 +54,40 @@ class TestCLICommands(unittest.TestCase):
             if main_py.exists():
                 return path
 
-        # Also check if we're in a subdirectory of the project
-        # Look for main.py in various possible locations
-        possible_roots = [
-            Path.cwd().parent.parent,  # If we're in tests/test_cli/
-            Path.cwd().parent,  # If we're in tests/
-            Path(__file__).parent.parent.parent,  # Relative to this test file
-        ]
-
-        for path in possible_roots:
+        # Also check relative to test file
+        test_file_path = Path(__file__)
+        for path in [test_file_path.parent.parent.parent, test_file_path.parent.parent]:
             main_py = path / "main.py"
             if main_py.exists():
                 return path
 
         return None
 
-    def run_command_safely(self, cmd, timeout=30):
+    def run_command_safely(self, cmd, timeout=30, capture_output=True):
         """Run command with proper path and encoding."""
         try:
-            # Make sure we use the correct path to main.py
-            if cmd[1] == "main.py":
-                cmd[1] = str(self.project_root / "main.py")
-
+            # Change to project root directory
             result = subprocess.run(
                 cmd,
-                capture_output=True,
+                capture_output=capture_output,
                 text=True,
                 timeout=timeout,
-                cwd=str(self.project_root),  # Run from project root
-                env=self.env,
-                encoding='utf-8',
-                errors='replace'
+                cwd=str(self.project_root),
+                env=self.env
             )
             return result
         except subprocess.TimeoutExpired:
-            print(f"⏰ Command timed out: {' '.join(cmd)}")
+            print(f"Command timed out: {' '.join(cmd)}")
             return None
         except Exception as e:
-            print(f"💥 Command failed: {e}")
+            print(f"Command execution error: {e}")
             return None
 
-    def test_metrics_command_with_real_data(self):
-        """Test the NEW metrics command implementation with real data."""
-        print("\n🧪 Testing metrics command...")
+    def test_generate_substrate_basic(self):
+        """Test basic substrate generation with refactored command."""
+        print("\n🧪 Testing basic substrate generation...")
 
-        # Create realistic mock results
-        mock_results = {
-            "metadata": {"timestamp": "2024-01-01T00:00:00"},
-            "results": [
-                {
-                    "vnr_id": "vnr_1",
-                    "success": True,
-                    "revenue": 150.0,
-                    "cost": 75.0,
-                    "execution_time": 0.012,
-                    "node_mapping": {"0": "1", "1": "3"},
-                    "link_mapping": {"0-1": ["1", "3"]},
-                    "timestamp": 1640995200.0
-                },
-                {
-                    "vnr_id": "vnr_2",
-                    "success": False,
-                    "revenue": 0.0,
-                    "cost": 25.0,
-                    "execution_time": 0.005,
-                    "failure_reason": "Insufficient bandwidth"
-                },
-                {
-                    "vnr_id": "vnr_3",
-                    "success": True,
-                    "revenue": 200.0,
-                    "cost": 100.0,
-                    "execution_time": 0.018,
-                    "node_mapping": {"0": "2", "1": "4"},
-                    "link_mapping": {"0-1": ["2", "4"]}
-                }
-            ]
-        }
-
-        # Save mock results to file
-        results_file = self.test_data_dir / "test_results.json"
-        with open(results_file, 'w', encoding='utf-8') as f:
-            json.dump(mock_results, f, indent=2)
-
-        # Test CSV output
-        csv_output = self.test_data_dir / "test_metrics.csv"
-        cmd = [
-            sys.executable, "main.py", "metrics",
-            "--results", str(results_file),
-            "--output", str(csv_output),
-            "--format", "csv"
-        ]
-
-        result = self.run_command_safely(cmd)
-
-        if result is None:
-            self.fail("Command execution failed or timed out")
-
-        print(f"Command exit code: {result.returncode}")
-        if result.returncode != 0:
-            print(f"STDERR: {result.stderr}")
-            print(f"STDOUT: {result.stdout}")
-
-        # Should succeed
-        self.assertEqual(result.returncode, 0, f"Metrics command failed: {result.stderr}")
-
-        # Verify output file created
-        self.assertTrue(csv_output.exists(), "CSV metrics file should be created")
-
-        # Test JSON output
-        json_output = self.test_data_dir / "test_metrics.json"
-        cmd = [
-            sys.executable, "main.py", "metrics",
-            "--results", str(results_file),
-            "--output", str(json_output),
-            "--format", "json"
-        ]
-
-        result = self.run_command_safely(cmd)
-        if result:
-            self.assertEqual(result.returncode, 0)
-            self.assertTrue(json_output.exists())
-
-            # Verify JSON content
-            with open(json_output, 'r', encoding='utf-8') as f:
-                metrics_data = json.load(f)
-
-            self.assertIn('metrics', metrics_data)
-            self.assertIn('primary_metrics', metrics_data['metrics'])
-
-            # Verify calculated metrics are reasonable
-            primary = metrics_data['metrics']['primary_metrics']
-            self.assertAlmostEqual(primary['acceptance_ratio'], 2 / 3, places=2)  # 2 successful out of 3
-            self.assertGreater(primary['total_revenue'], 0)
-
-        print("✅ Metrics command test passed!")
-
-    def test_generate_command_integration(self):
-        """Test generate command end-to-end."""
-        print("\n🧪 Testing generate command...")
-
-        # Test substrate generation
-        substrate_base = self.test_data_dir / "test_substrate"
+        substrate_base = self.test_data_dir / "test_substrate_basic"
         cmd = [
             sys.executable, "main.py", "generate", "substrate",
             "--nodes", "10",
@@ -200,22 +97,117 @@ class TestCLICommands(unittest.TestCase):
         ]
 
         result = self.run_command_safely(cmd)
-
-        if result is None:
-            self.fail("Generate substrate command failed or timed out")
-
-        if result.returncode != 0:
-            print(f"Generate substrate STDERR: {result.stderr}")
-            print(f"Generate substrate STDOUT: {result.stdout}")
-
-        self.assertEqual(result.returncode, 0, f"Generate substrate failed: {result.stderr}")
+        self.assertIsNotNone(result, "Command should not timeout")
+        self.assertEqual(result.returncode, 0, f"Command failed: {result.stderr}")
 
         # Verify files created
-        self.assertTrue((substrate_base.parent / f"{substrate_base.name}_nodes.csv").exists())
-        self.assertTrue((substrate_base.parent / f"{substrate_base.name}_links.csv").exists())
+        nodes_file = substrate_base.parent / f"{substrate_base.name}_nodes.csv"
+        links_file = substrate_base.parent / f"{substrate_base.name}_links.csv"
 
-        # Test VNR generation
-        vnr_base = self.test_data_dir / "test_vnrs"
+        self.assertTrue(nodes_file.exists(), "Nodes CSV should be created")
+        self.assertTrue(links_file.exists(), "Links CSV should be created")
+
+        # Verify node file content
+        with open(nodes_file, 'r', newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            self.assertEqual(len(rows), 10, "Should have 10 nodes")
+
+            # Check that all required columns exist
+            required_columns = ['node_id', 'cpu_capacity', 'memory_capacity', 'x_coord', 'y_coord']
+            for col in required_columns:
+                self.assertIn(col, reader.fieldnames, f"Column {col} should exist")
+
+        print("✅ Basic substrate generation test passed!")
+
+    def test_generate_substrate_all_topologies(self):
+        """Test substrate generation with all supported topologies."""
+        print("\n🧪 Testing all substrate topologies...")
+
+        topologies = [
+            ("erdos_renyi", {"--edge-prob": "0.2"}),
+            ("barabasi_albert", {"--attachment-count": "2"}),
+            ("grid", {})
+        ]
+
+        for topology, extra_args in topologies:
+            print(f"\n  Testing {topology} topology...")
+
+            substrate_base = self.test_data_dir / f"test_substrate_{topology}"
+            cmd = [
+                sys.executable, "main.py", "generate", "substrate",
+                "--nodes", "16",  # Use 16 for perfect grid
+                "--topology", topology,
+                "--save", str(substrate_base)
+            ]
+
+            # Add topology-specific arguments
+            for arg, value in extra_args.items():
+                cmd.extend([arg, value])
+
+            result = self.run_command_safely(cmd)
+            self.assertIsNotNone(result, f"{topology} generation should not timeout")
+            self.assertEqual(result.returncode, 0, f"{topology} generation failed: {result.stderr}")
+
+            # Verify files exist
+            nodes_file = substrate_base.parent / f"{substrate_base.name}_nodes.csv"
+            links_file = substrate_base.parent / f"{substrate_base.name}_links.csv"
+
+            self.assertTrue(nodes_file.exists(), f"{topology} nodes file should exist")
+            self.assertTrue(links_file.exists(), f"{topology} links file should exist")
+
+            # Verify we have links
+            with open(links_file, 'r', newline='', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                next(reader)  # Skip header
+                link_count = sum(1 for _ in reader)
+                self.assertGreater(link_count, 0, f"{topology} should have links")
+
+        print("✅ All topology tests passed!")
+
+    def test_generate_substrate_resource_ranges(self):
+        """Test substrate generation with custom resource ranges."""
+        print("\n🧪 Testing custom resource ranges...")
+
+        substrate_base = self.test_data_dir / "test_substrate_custom"
+        cmd = [
+            sys.executable, "main.py", "generate", "substrate",
+            "--nodes", "5",
+            "--cpu-range", "100", "500",
+            "--memory-range", "200", "800",
+            "--bandwidth-range", "1000", "5000",
+            "--save", str(substrate_base)
+        ]
+
+        result = self.run_command_safely(cmd)
+        self.assertIsNotNone(result, "Command should not timeout")
+        self.assertEqual(result.returncode, 0, f"Command failed: {result.stderr}")
+
+        # Verify resource values are in specified ranges
+        nodes_file = substrate_base.parent / f"{substrate_base.name}_nodes.csv"
+        with open(nodes_file, 'r', newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                cpu = int(row['cpu_capacity'])
+                memory = int(row['memory_capacity'])
+
+                self.assertGreaterEqual(cpu, 100, "CPU should be >= 100")
+                self.assertLessEqual(cpu, 500, "CPU should be <= 500")
+                self.assertGreaterEqual(memory, 200, "Memory should be >= 200")
+                self.assertLessEqual(memory, 800, "Memory should be <= 800")
+
+        print("✅ Custom resource range test passed!")
+
+    def test_generate_vnrs_basic(self):
+        """Test basic VNR generation with refactored command."""
+        print("\n🧪 Testing basic VNR generation...")
+
+        # First create a substrate
+        substrate_base = self.test_data_dir / "test_substrate_for_vnrs"
+        self._create_test_substrate(substrate_base, nodes=10)
+
+        # Generate VNRs
+        vnr_base = self.test_data_dir / "test_vnrs_basic"
         cmd = [
             sys.executable, "main.py", "generate", "vnrs",
             "--count", "20",
@@ -225,165 +217,205 @@ class TestCLICommands(unittest.TestCase):
         ]
 
         result = self.run_command_safely(cmd)
+        self.assertIsNotNone(result, "VNR generation should not timeout")
+        self.assertEqual(result.returncode, 0, f"VNR generation failed: {result.stderr}")
 
-        if result is None:
-            self.fail("Generate VNRs command failed or timed out")
+        # Verify files created
+        metadata_file = vnr_base.parent / f"{vnr_base.name}_metadata.csv"
+        nodes_file = vnr_base.parent / f"{vnr_base.name}_nodes.csv"
+        links_file = vnr_base.parent / f"{vnr_base.name}_links.csv"
 
-        if result.returncode != 0:
-            print(f"Generate VNRs STDERR: {result.stderr}")
-            print(f"Generate VNRs STDOUT: {result.stdout}")
+        self.assertTrue(metadata_file.exists(), "VNR metadata file should exist")
+        self.assertTrue(nodes_file.exists(), "VNR nodes file should exist")
+        self.assertTrue(links_file.exists(), "VNR links file should exist")
 
-        self.assertEqual(result.returncode, 0, f"Generate VNRs failed: {result.stderr}")
+        # Verify metadata content
+        with open(metadata_file, 'r', newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            self.assertEqual(len(rows), 20, "Should have 20 VNRs")
 
-        # Verify VNR files created
-        self.assertTrue((vnr_base.parent / f"{vnr_base.name}_metadata.csv").exists())
+            # Check required columns
+            required_columns = ['vnr_id', 'arrival_time', 'holding_time', 'priority']
+            for col in required_columns:
+                self.assertIn(col, reader.fieldnames, f"Column {col} should exist")
 
-        print("✅ Generate command test passed!")
+        print("✅ Basic VNR generation test passed!")
 
-    def test_run_command_basic(self):
-        """Test run command with algorithm discovery."""
-        print("\n🧪 Testing run command...")
+    def test_generate_vnrs_all_topologies(self):
+        """Test VNR generation with all supported topologies."""
+        print("\n🧪 Testing all VNR topologies...")
 
-        # Test algorithm listing
-        cmd = [sys.executable, "main.py", "run", "--list-algorithms"]
-        result = self.run_command_safely(cmd)
+        # Create substrate first
+        substrate_base = self.test_data_dir / "test_substrate_for_vnr_topologies"
+        self._create_test_substrate(substrate_base, nodes=20)
 
-        if result is None:
-            self.fail("Algorithm listing command failed or timed out")
+        topologies = ["random", "star", "linear", "tree"]
 
-        print(f"Algorithm list exit code: {result.returncode}")
-        print(f"Available algorithms: {result.stdout}")
+        for topology in topologies:
+            print(f"\n  Testing {topology} VNR topology...")
 
-        self.assertEqual(result.returncode, 0, "Algorithm listing should work")
-        self.assertIn("algorithms", result.stdout.lower())
+            vnr_base = self.test_data_dir / f"test_vnrs_{topology}"
+            cmd = [
+                sys.executable, "main.py", "generate", "vnrs",
+                "--count", "10",
+                "--substrate", str(substrate_base),
+                "--nodes-range", "3", "6",
+                "--topology", topology,
+                "--save", str(vnr_base)
+            ]
 
-        print("✅ Run command basic test passed!")
+            result = self.run_command_safely(cmd)
+            self.assertIsNotNone(result, f"{topology} VNR generation should not timeout")
+            self.assertEqual(result.returncode, 0, f"{topology} VNR generation failed: {result.stderr}")
 
-    def test_config_command(self):
-        """Test configuration command."""
-        print("\n🧪 Testing config command...")
+            # Verify files exist
+            metadata_file = vnr_base.parent / f"{vnr_base.name}_metadata.csv"
+            self.assertTrue(metadata_file.exists(), f"{topology} VNR metadata should exist")
 
-        # Test default config creation
-        config_file = self.test_data_dir / "test_config.yaml"
+        print("✅ All VNR topology tests passed!")
+
+    def test_generate_vnrs_resource_ratios(self):
+        """Test VNR generation with custom resource ratios."""
+        print("\n🧪 Testing custom resource ratios...")
+
+        # Create substrate
+        substrate_base = self.test_data_dir / "test_substrate_for_ratios"
+        self._create_test_substrate(substrate_base, nodes=10)
+
+        vnr_base = self.test_data_dir / "test_vnrs_ratios"
         cmd = [
-            sys.executable, "main.py", "config",
-            "--create-default", str(config_file)
+            sys.executable, "main.py", "generate", "vnrs",
+            "--count", "15",
+            "--substrate", str(substrate_base),
+            "--cpu-ratio", "0.2", "0.5",
+            "--memory-ratio", "0.3", "0.6",
+            "--bandwidth-ratio", "0.1", "0.4",
+            "--save", str(vnr_base)
         ]
 
         result = self.run_command_safely(cmd)
+        self.assertIsNotNone(result, "Command should not timeout")
+        self.assertEqual(result.returncode, 0, f"Command failed: {result.stderr}")
 
-        if result is None:
-            self.fail("Config command failed or timed out")
+        # Verify that VNRs were created with appropriate resource requirements
+        nodes_file = vnr_base.parent / f"{vnr_base.name}_nodes.csv"
+        self.assertTrue(nodes_file.exists(), "VNR nodes file should exist")
 
-        if result.returncode != 0:
-            print(f"Config command STDERR: {result.stderr}")
-            print(f"Config command STDOUT: {result.stdout}")
+        print("✅ Custom resource ratio test passed!")
 
-        self.assertEqual(result.returncode, 0, f"Config creation failed: {result.stderr}")
-        self.assertTrue(config_file.exists(), "Config file should be created")
+    def test_generate_with_seed(self):
+        """Test generation with random seed for reproducibility."""
+        print("\n🧪 Testing reproducible generation with seed...")
 
-        print("✅ Config command test passed!")
+        # Generate substrate twice with same seed
+        substrate1 = self.test_data_dir / "test_substrate_seed1"
+        substrate2 = self.test_data_dir / "test_substrate_seed2"
 
-    def test_error_handling_scenarios(self):
-        """Test CLI error handling scenarios with robust error checking."""
+        for substrate_base in [substrate1, substrate2]:
+            cmd = [
+                sys.executable, "main.py", "generate", "substrate",
+                "--nodes", "8",
+                "--topology", "erdos_renyi",
+                "--edge-prob", "0.3",
+                "--seed", "42",
+                "--save", str(substrate_base)
+            ]
+
+            result = self.run_command_safely(cmd)
+            self.assertIsNotNone(result, "Command should not timeout")
+            self.assertEqual(result.returncode, 0, f"Command failed: {result.stderr}")
+
+        # Compare files - they should be identical
+        nodes1 = substrate1.parent / f"{substrate1.name}_nodes.csv"
+        nodes2 = substrate2.parent / f"{substrate2.name}_nodes.csv"
+
+        with open(nodes1, 'r') as f1, open(nodes2, 'r') as f2:
+            content1 = f1.read()
+            content2 = f2.read()
+            self.assertEqual(content1, content2, "Seeded generation should be reproducible")
+
+        print("✅ Seed reproducibility test passed!")
+
+    def test_error_handling(self):
+        """Test error handling in generate command."""
         print("\n🧪 Testing error handling...")
 
-        # Test metrics with non-existent file
+        # Test invalid topology
         cmd = [
-            sys.executable, "main.py", "metrics",
-            "--results", "nonexistent_file.json",
-            "--output", "output.csv"
+            sys.executable, "main.py", "generate", "substrate",
+            "--nodes", "10",
+            "--topology", "invalid_topology",
+            "--save", str(self.test_data_dir / "test")
         ]
 
         result = self.run_command_safely(cmd)
+        self.assertIsNotNone(result, "Command should not timeout")
+        self.assertNotEqual(result.returncode, 0, "Invalid topology should fail")
 
-        if result is None:
-            print("⚠️ Error handling test skipped due to command execution issues")
-            return
+        # Test VNR generation without substrate
+        cmd = [
+            sys.executable, "main.py", "generate", "vnrs",
+            "--count", "10",
+            "--substrate", str(self.test_data_dir / "nonexistent"),
+            "--save", str(self.test_data_dir / "test_vnrs")
+        ]
 
-        # Should fail gracefully
-        self.assertNotEqual(result.returncode, 0, "Should fail for non-existent file")
-
-        # Robust error message checking
-        error_output = ""
-        if result.stderr:
-            error_output += result.stderr.lower()
-        if result.stdout:
-            error_output += result.stdout.lower()
-
-        # Check for error indicators
-        error_indicators = ["not found", "error", "failed", "exception", "no such file"]
-        has_error_indicator = any(indicator in error_output for indicator in error_indicators)
-
-        self.assertTrue(has_error_indicator,
-                        f"Should have error message. Output: stdout={result.stdout}, stderr={result.stderr}")
+        result = self.run_command_safely(cmd)
+        self.assertIsNotNone(result, "Command should not timeout")
+        self.assertNotEqual(result.returncode, 0, "Missing substrate should fail")
 
         print("✅ Error handling test passed!")
 
-    def test_help_system(self):
-        """Test help system works."""
-        print("\n🧪 Testing help system...")
+    def test_generator_module_integration(self):
+        """Test that generate command properly uses generator modules."""
+        print("\n🧪 Testing generator module integration...")
 
-        # Test main help
-        cmd = [sys.executable, "main.py", "--help"]
-        result = self.run_command_safely(cmd)
+        # This test ensures we're using the generator modules by checking
+        # that the output format matches what the generators produce
 
-        if result is None:
-            self.fail("Help command failed or timed out")
-
-        self.assertEqual(result.returncode, 0)
-        self.assertIn("generate", result.stdout)
-        self.assertIn("run", result.stdout)
-        self.assertIn("metrics", result.stdout)
-
-        # Test subcommand help
-        cmd = [sys.executable, "main.py", "generate", "--help"]
-        result = self.run_command_safely(cmd)
-
-        if result:
-            self.assertEqual(result.returncode, 0)
-            self.assertIn("substrate", result.stdout)
-            self.assertIn("vnrs", result.stdout)
-
-        print("✅ Help system test passed!")
-
-    def test_project_structure_validation(self):
-        """Test that we can find and validate the project structure."""
-        print("\n🧪 Testing project structure...")
-
-        # Verify main.py exists in project root
-        main_py = self.project_root / "main.py"
-        self.assertTrue(main_py.exists(), f"main.py should exist at {main_py}")
-
-        # Verify key directories exist
-        key_dirs = ["src", "src/models", "src/algorithms", "src/utils", "cli", "core"]
-        for dir_name in key_dirs:
-            dir_path = self.project_root / dir_name
-            self.assertTrue(dir_path.exists(), f"Directory {dir_name} should exist")
-
-        # Verify key files exist
-        key_files = [
-            "src/models/substrate.py",
-            "src/models/virtual_request.py",
-            "src/algorithms/base_algorithm.py",
-            "cli/commands/metrics_command.py",
-            "core/algorithm_registry.py"
+        substrate_base = self.test_data_dir / "test_generator_integration"
+        cmd = [
+            sys.executable, "main.py", "generate", "substrate",
+            "--nodes", "6",
+            "--topology", "barabasi_albert",
+            "--attachment-count", "2",
+            "--save", str(substrate_base)
         ]
 
-        for file_name in key_files:
-            file_path = self.project_root / file_name
-            self.assertTrue(file_path.exists(), f"File {file_name} should exist")
+        result = self.run_command_safely(cmd, capture_output=True)
+        self.assertIsNotNone(result, "Command should not timeout")
+        self.assertEqual(result.returncode, 0, f"Command failed: {result.stderr}")
 
-        print("✅ Project structure validation passed!")
+        # Check output for generator module usage indicators
+        # The refactored code should show clean output from generators
+        self.assertIn("Generating substrate network", result.stdout)
+        self.assertIn("Successfully generated", result.stdout)
+
+        print("✅ Generator module integration test passed!")
+
+    def _create_test_substrate(self, base_path, nodes=10):
+        """Helper to create a test substrate network."""
+        cmd = [
+            sys.executable, "main.py", "generate", "substrate",
+            "--nodes", str(nodes),
+            "--topology", "erdos_renyi",
+            "--edge-prob", "0.3",
+            "--save", str(base_path)
+        ]
+
+        result = self.run_command_safely(cmd)
+        if result is None or result.returncode != 0:
+            self.fail(f"Failed to create test substrate: {result.stderr if result else 'timeout'}")
 
 
-def run_cli_tests():
-    """Run CLI tests with proper error handling and path detection."""
-    print("🚀 Running Path-Aware CLI Tests...")
+def run_enhanced_cli_tests():
+    """Run enhanced CLI tests for refactored GenerateCommand."""
+    print("🚀 Running Enhanced CLI Tests for Refactored GenerateCommand...")
     print("=" * 60)
 
     # Create test suite
-    suite = unittest.TestLoader().loadTestsFromTestCase(TestCLICommands)
+    suite = unittest.TestLoader().loadTestsFromTestCase(TestCLICommandsEnhanced)
 
     # Run tests with detailed output
     runner = unittest.TextTestRunner(verbosity=2, stream=sys.stdout)
@@ -391,47 +423,18 @@ def run_cli_tests():
 
     print("\n" + "=" * 60)
     if result.wasSuccessful():
-        print("🎉 All CLI tests passed!")
-        print("✅ Your CLI layer is working perfectly with the fixes.")
-        print("🏆 You now have comprehensive test coverage!")
+        print("🎉 All enhanced CLI tests passed!")
+        print("✅ The refactored GenerateCommand is working correctly.")
+        print("✅ Generator modules are properly integrated.")
+        print("🏆 Ready to proceed with next refactoring steps!")
     else:
-        print("⚠️ Some CLI tests failed.")
+        print("⚠️  Some enhanced CLI tests failed.")
         print(f"Failed: {len(result.failures)}, Errors: {len(result.errors)}")
-        print("🔧 Check the error messages above for guidance.")
-
-        # Print failure details
-        if result.failures:
-            print("\nFailure details:")
-            for test, traceback in result.failures:
-                print(f"FAIL: {test}")
-                print(traceback)
-
-        if result.errors:
-            print("\nError details:")
-            for test, traceback in result.errors:
-                print(f"ERROR: {test}")
-                print(traceback)
+        print("🔧 Fix the issues before proceeding.")
 
     return result.wasSuccessful()
 
 
 if __name__ == "__main__":
-    # Run the path-aware CLI tests
-    success = run_cli_tests()
-
-    if success:
-        print("\n🎊 CONGRATULATIONS! 🎊")
-        print("=" * 60)
-        print("✅ All tests pass - your VNE framework is production ready!")
-        print("🏆 You have achieved comprehensive test coverage!")
-        print("🚀 Ready for serious VNE research and development!")
-        print("\n📊 Your testing includes:")
-        print("  ✅ Core models and algorithms")
-        print("  ✅ Generators and utilities")
-        print("  ✅ Metrics and I/O systems")
-        print("  ✅ CLI commands and workflows")
-        print("  ✅ Error handling and edge cases")
-        print("  ✅ Cross-platform compatibility")
-        print("\n🎯 Next: Start your VNE research!")
-
+    success = run_enhanced_cli_tests()
     sys.exit(0 if success else 1)

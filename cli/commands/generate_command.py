@@ -1,18 +1,28 @@
 """
 Generate command implementation using proper generator modules.
+
+This refactored version properly uses the generator modules from src.utils.generators
+instead of reimplementing generation logic, following DRY principles.
 """
 
 import logging
-import random
 from pathlib import Path
 from .base_command import BaseCommand
 from cli.exceptions import CommandError, FileError
+
+# Import the generator modules instead of reimplementing
+from src.utils.generators import (
+    generate_substrate_network,
+    generate_vnr_batch,
+    NetworkGenerationConfig,
+    set_random_seed
+)
 
 logger = logging.getLogger(__name__)
 
 
 class GenerateCommand(BaseCommand):
-    """Command for generating substrate networks and VNR batches."""
+    """Command for generating substrate networks and VNR batches using generator modules."""
 
     def execute(self, args) -> int:
         """Execute the generate command."""
@@ -27,100 +37,45 @@ class GenerateCommand(BaseCommand):
             raise CommandError(f"Unknown generate type: {args.generate_type}")
 
     def _generate_substrate(self, args) -> int:
-        """Generate substrate network using the original logic."""
+        """Generate substrate network using the generator modules."""
         try:
             # Set random seed if provided
             if args.seed:
-                random.seed(args.seed)
+                set_random_seed(args.seed)
                 logger.info(f"Random seed set to {args.seed}")
 
-            # Generate substrate network using original logic from main.py
             print(f"Generating substrate network with {args.nodes} nodes...")
 
-            # Import and use SubstrateNetwork directly
-            from src.models.substrate import SubstrateNetwork
+            # Map CLI arguments to generator parameters
+            # The generator handles all the complexity internally
+            topology_params = {}
+            if args.topology == "grid":
+                # For grid topology, calculate grid size
+                import math
+                topology_params['grid_size'] = int(math.sqrt(args.nodes))
 
-            substrate = SubstrateNetwork()
+            # Use the generator module instead of manual implementation
+            substrate = generate_substrate_network(
+                nodes=args.nodes,
+                topology=args.topology,
+                edge_probability=getattr(args, 'edge_prob', 0.15),
+                attachment_count=getattr(args, 'attachment_count', 3),
+                enable_memory_constraints=True,  # Always generate memory for compatibility
+                enable_delay_constraints=False,   # Match original behavior
+                enable_cost_constraints=False,
+                enable_reliability_constraints=False,
+                cpu_range=args.cpu_range,
+                memory_range=args.memory_range,
+                bandwidth_range=args.bandwidth_range,
+                delay_range=(1.0, 10.0),  # Match original behavior
+                coordinate_range=(0.0, 100.0),  # Match original behavior
+                **topology_params
+            )
 
-            # Generate nodes with resources
-            for i in range(args.nodes):
-                node_id = i
-                cpu_capacity = random.randint(*args.cpu_range)
-                memory_capacity = random.randint(*args.memory_range)
-                x_coord = random.uniform(0.0, 100.0)
-                y_coord = random.uniform(0.0, 100.0)
+            # Get edge count for reporting
+            edges_created = len(substrate.graph.edges())
 
-                substrate.add_node(
-                    node_id=node_id,
-                    cpu_capacity=cpu_capacity,
-                    memory_capacity=memory_capacity,
-                    x_coord=x_coord,
-                    y_coord=y_coord
-                )
-
-            # Generate edges based on topology
-            edges_created = 0
-            if args.topology == "erdos_renyi":
-                for i in range(args.nodes):
-                    for j in range(i + 1, args.nodes):
-                        if random.random() < args.edge_prob:
-                            bandwidth = random.randint(*args.bandwidth_range)
-                            delay = random.uniform(1.0, 10.0)
-                            substrate.add_link(
-                                src=i, dst=j,
-                                bandwidth_capacity=bandwidth,
-                                delay=delay
-                            )
-                            edges_created += 1
-                print(f"Created {edges_created} edges for Erdos-Renyi topology")
-
-            elif args.topology == "barabasi_albert":
-                # Simplified Barabási-Albert implementation
-                # Start with a small complete graph
-                initial_nodes = min(args.attachment_count, args.nodes)
-                for i in range(initial_nodes):
-                    for j in range(i + 1, initial_nodes):
-                        bandwidth = random.randint(*args.bandwidth_range)
-                        delay = random.uniform(1.0, 10.0)
-                        substrate.add_link(i, j, bandwidth, delay)
-                        edges_created += 1
-
-                # Add remaining nodes with preferential attachment
-                for new_node in range(initial_nodes, args.nodes):
-                    # Simple preferential attachment: connect to random existing nodes
-                    targets = random.sample(range(new_node), min(args.attachment_count, new_node))
-                    for target in targets:
-                        bandwidth = random.randint(*args.bandwidth_range)
-                        delay = random.uniform(1.0, 10.0)
-                        substrate.add_link(new_node, target, bandwidth, delay)
-                        edges_created += 1
-
-                print(f"Created {edges_created} edges for Barabási-Albert topology")
-
-            elif args.topology == "grid":
-                # Grid topology implementation
-                grid_size = int(args.nodes ** 0.5)
-                for i in range(args.nodes):
-                    row = i // grid_size
-                    col = i % grid_size
-
-                    # Connect to right neighbor
-                    if col < grid_size - 1 and (i + 1) < args.nodes:
-                        bandwidth = random.randint(*args.bandwidth_range)
-                        delay = random.uniform(1.0, 10.0)
-                        substrate.add_link(i, i + 1, bandwidth, delay)
-                        edges_created += 1
-
-                    # Connect to bottom neighbor
-                    if row < grid_size - 1 and (i + grid_size) < args.nodes:
-                        bandwidth = random.randint(*args.bandwidth_range)
-                        delay = random.uniform(1.0, 10.0)
-                        substrate.add_link(i, i + grid_size, bandwidth, delay)
-                        edges_created += 1
-
-                print(f"Created {edges_created} edges for grid topology")
-
-            # Save to file using the original naming convention
+            # Save to file using the same naming convention
             print(f"Saving substrate network to {args.save}...")
             base_name = args.save.replace('.csv', '') if args.save.endswith('.csv') else args.save
             substrate.save_to_csv(
@@ -144,7 +99,7 @@ class GenerateCommand(BaseCommand):
             return 1
 
     def _generate_vnrs(self, args) -> int:
-        """Generate VNR batch using the original logic."""
+        """Generate VNR batch using the generator modules."""
         try:
             # Load substrate network
             print(f"Loading substrate network from {args.substrate}...")
@@ -156,93 +111,53 @@ class GenerateCommand(BaseCommand):
 
             # Set random seed if provided
             if args.seed:
-                random.seed(args.seed)
+                set_random_seed(args.seed)
                 logger.info(f"Random seed set to {args.seed}")
 
-            # Generate VNRs using original logic from main.py
             print(f"Generating {args.count} VNRs...")
-            vnrs = []
 
-            from src.models.virtual_request import VirtualNetworkRequest
+            # Create configuration for VNR generation
+            config = NetworkGenerationConfig(
+                # VNR parameters
+                vnr_nodes_range=args.nodes_range,
+                vnr_topology=args.topology,
+                vnr_edge_probability=getattr(args, 'edge_prob', 0.5),
 
-            for i in range(args.count):
-                # Generate VNR parameters
-                vnr_nodes_count = random.randint(*args.nodes_range)
-                arrival_time = random.expovariate(1.0 / args.arrival_rate) * i
-                holding_time = random.expovariate(1.0 / args.lifetime_mean)
+                # Resource ratios (matching original behavior)
+                vnr_cpu_ratio_range=args.cpu_ratio,
+                vnr_memory_ratio_range=args.memory_ratio,
+                vnr_bandwidth_ratio_range=args.bandwidth_ratio,
 
-                # Create VNR
-                vnr = VirtualNetworkRequest(
-                    vnr_id=i,
-                    arrival_time=arrival_time,
-                    holding_time=holding_time
-                )
+                # Temporal parameters
+                arrival_pattern="poisson",
+                arrival_rate=args.arrival_rate,
+                holding_time_distribution="exponential",
+                holding_time_mean=args.lifetime_mean,
 
-                # Add virtual nodes
-                for j in range(vnr_nodes_count):
-                    cpu_req = random.randint(
-                        int(50 * args.cpu_ratio[0]),
-                        int(100 * args.cpu_ratio[1])
-                    )
-                    memory_req = random.randint(
-                        int(50 * args.memory_ratio[0]),
-                        int(100 * args.memory_ratio[1])
-                    )
+                # Substrate resource ranges (for ratio calculations)
+                cpu_range=(50, 100),  # These will be overridden by actual substrate values
+                memory_range=(50, 100),
+                bandwidth_range=(50, 100),
 
-                    vnr.add_virtual_node(
-                        node_id=j,
-                        cpu_requirement=cpu_req,
-                        memory_requirement=memory_req
-                    )
+                # Inherit constraint settings from substrate
+                enable_memory_constraints=substrate.enable_memory_constraints,
+                enable_delay_constraints=substrate.enable_delay_constraints,
+                enable_cost_constraints=substrate.enable_cost_constraints,
+                enable_reliability_constraints=substrate.enable_reliability_constraints
+            )
 
-                # Add virtual links based on topology
-                if args.topology == "random" and vnr_nodes_count > 1:
-                    for src in range(vnr_nodes_count):
-                        for dst in range(src + 1, vnr_nodes_count):
-                            if random.random() < args.edge_prob:
-                                bandwidth_req = random.randint(
-                                    int(50 * args.bandwidth_ratio[0]),
-                                    int(100 * args.bandwidth_ratio[1])
-                                )
-                                vnr.add_virtual_link(
-                                    src_node=src,
-                                    dst_node=dst,
-                                    bandwidth_requirement=bandwidth_req
-                                )
-                elif args.topology == "star" and vnr_nodes_count > 1:
-                    # Star topology: connect all nodes to node 0
-                    for i in range(1, vnr_nodes_count):
-                        bandwidth_req = random.randint(
-                            int(50 * args.bandwidth_ratio[0]),
-                            int(100 * args.bandwidth_ratio[1])
-                        )
-                        vnr.add_virtual_link(
-                            src_node=0,
-                            dst_node=i,
-                            bandwidth_requirement=bandwidth_req
-                        )
-                elif args.topology == "linear" and vnr_nodes_count > 1:
-                    # Linear topology: chain of nodes
-                    for i in range(vnr_nodes_count - 1):
-                        bandwidth_req = random.randint(
-                            int(50 * args.bandwidth_ratio[0]),
-                            int(100 * args.bandwidth_ratio[1])
-                        )
-                        vnr.add_virtual_link(
-                            src_node=i,
-                            dst_node=i + 1,
-                            bandwidth_requirement=bandwidth_req
-                        )
+            # Use the generator module to create VNR batch
+            vnr_batch = generate_vnr_batch(
+                count=args.count,
+                substrate_nodes=substrate_nodes,
+                config=config,
+                substrate_network=substrate  # Pass substrate for constraint inheritance
+            )
 
-                vnrs.append(vnr)
-
-            # Save VNRs using VNRBatch
+            # Save VNRs using the same file naming convention
             print(f"Saving VNRs to {args.save}...")
-            from src.models.vnr_batch import VNRBatch
-
-            batch = VNRBatch(vnrs, "generated_batch")
             base_name = args.save.replace('.csv', '') if args.save.endswith('.csv') else args.save
-            batch.save_to_csv(base_name)
+            vnr_batch.save_to_csv(base_name)
 
             print(f"✓ Successfully generated VNR batch: {args.save}")
             print(f"  - Count: {args.count}")

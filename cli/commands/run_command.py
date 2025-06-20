@@ -105,7 +105,7 @@ class RunCommand(BaseCommand):
         try:
             # Try to load using VNRBatch if available
             try:
-                from src.models.virtual_request import VNRBatch
+                from src.models.vnr_batch import VNRBatch
                 base_name = filepath.replace('.csv', '') if filepath.endswith('.csv') else filepath
                 vnr_batch = VNRBatch.load_from_csv(base_name)
                 logger.info(f"Loaded VNR batch: {vnr_batch}")

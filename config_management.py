@@ -677,6 +677,7 @@ class ConfigurationManager:
         try:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             config_dict = asdict(self.config)
+            config_dict = self._convert_tuples_to_lists(config_dict)
 
             with open(output_path, 'w', encoding=self._encoding) as f:
                 if format.lower() == "yaml":
@@ -691,6 +692,17 @@ class ConfigurationManager:
 
         except Exception as e:
             raise FileHandlingError(f"Failed to save configuration to {output_path}: {e}")
+
+    def _convert_tuples_to_lists(self, obj):
+        """Convert tuples to lists recursively for YAML compatibility."""
+        if isinstance(obj, dict):
+            return {key: self._convert_tuples_to_lists(value) for key, value in obj.items()}
+        elif isinstance(obj, tuple):
+            return list(obj)  # Convert tuples to lists
+        elif isinstance(obj, list):
+            return [self._convert_tuples_to_lists(item) for item in obj]
+        else:
+            return obj
 
     def get_algorithm_config(self, algorithm_name: str) -> Dict[str, Any]:
         """

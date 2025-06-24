@@ -13,6 +13,7 @@ from src.algorithms.baseline.yu_2008_algorithm import YuAlgorithm
 from src.models.virtual_request import VirtualNetworkRequest
 from src.models.substrate import SubstrateNetwork
 from src.utils.metrics import calculate_vnr_revenue, calculate_vnr_cost
+from src.models.vnr_batch import VNRBatch
 
 
 class TestVNEAlgorithmBase(unittest.TestCase):
@@ -235,8 +236,9 @@ class TestBaseAlgorithm(TestVNEAlgorithmBase):
     def test_batch_embedding(self):
         """Test batch embedding functionality."""
         vnrs = [self.simple_vnr, self.complex_vnr]
-        
-        results = self.mock_algorithm.embed_batch(vnrs, self.substrate)
+
+        vnr_batch = VNRBatch(vnrs, "test_batch")
+        results = self.mock_algorithm.embed_batch(vnr_batch, self.substrate)
         
         self.assertEqual(len(results), 2)
         self.assertTrue(all(isinstance(r, EmbeddingResult) for r in results))
@@ -259,8 +261,9 @@ class TestBaseAlgorithm(TestVNEAlgorithmBase):
         vnr2.add_virtual_link(0, 1, 20.0)
         
         vnrs = [vnr1, vnr2]
-        
-        results = self.mock_algorithm.embed_online(vnrs, self.substrate)
+
+        vnr_batch = VNRBatch(vnrs, "online_test_batch")
+        results = self.mock_algorithm.embed_online(vnr_batch, self.substrate)
         
         self.assertEqual(len(results), 2)
         self.assertTrue(all(isinstance(r, EmbeddingResult) for r in results))
@@ -652,7 +655,7 @@ class TestVNEAlgorithmIntegration(TestVNEAlgorithmBase):
 
         # Test algorithm with generated networks
         yu_algorithm = YuAlgorithm()
-        results = yu_algorithm.embed_batch(generated_vnrs.vnrs, generated_substrate)
+        results = yu_algorithm.embed_batch(generated_vnrs, generated_substrate)
 
         self.assertEqual(len(results), 10)
         self.assertTrue(all(isinstance(r, EmbeddingResult) for r in results))

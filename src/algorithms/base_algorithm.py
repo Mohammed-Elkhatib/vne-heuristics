@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from src.models.virtual_request import VirtualNetworkRequest
 from src.models.substrate import SubstrateNetwork
+from src.models.vnr_batch import VNRBatch
 from src.utils.metrics import (
     calculate_vnr_revenue,
     calculate_vnr_cost,
@@ -301,7 +302,7 @@ class BaseAlgorithm(ABC):
         """
         pass
 
-    def embed_batch(self, vnrs: List[VirtualNetworkRequest],
+    def embed_batch(self, vnr_batch: VNRBatch,
                    substrate: SubstrateNetwork) -> List[EmbeddingResult]:
         """
         Embed a batch of VNRs sequentially for statistical analysis.
@@ -316,24 +317,24 @@ class BaseAlgorithm(ABC):
         Returns:
             List of EmbeddingResult objects
         """
-        self.logger.info(f"Starting batch embedding: {len(vnrs)} VNRs")
+        self.logger.info(f"Starting batch embedding: {len(vnr_batch)} VNRs")
 
         results = []
-        for i, vnr in enumerate(vnrs):
+        for i, vnr in enumerate(vnr_batch):
             result = self.embed_vnr(vnr, substrate)
             results.append(result)
 
             # Progress logging for large batches
-            if (i + 1) % 10 == 0 or (i + 1) == len(vnrs):
+            if (i + 1) % 10 == 0 or (i + 1) == len(vnr_batch):
                 success_count = sum(1 for r in results if r.success)
                 acceptance_ratio = success_count / (i + 1)
-                self.logger.info(f"Batch progress: {i+1}/{len(vnrs)}, "
+                self.logger.info(f"Batch progress: {i+1}/{len(vnr_batch)}, "
                                f"AR={acceptance_ratio:.3f}")
 
         self.logger.info(f"Batch embedding completed: {len(results)} results")
         return results
 
-    def embed_online(self, vnrs: List[VirtualNetworkRequest],
+    def embed_online(self, vnr_batch: VNRBatch,
                     substrate: SubstrateNetwork,
                     simulation_duration: Optional[float] = None) -> List[EmbeddingResult]:
         """
@@ -353,10 +354,11 @@ class BaseAlgorithm(ABC):
         Returns:
             List of EmbeddingResult objects for all VNRs
         """
-        self.logger.info(f"Starting online VNE simulation: {len(vnrs)} VNRs")
+        self.logger.info(f"Starting online VNE simulation: {len(vnr_batch)} VNRs")
 
         # Sort VNRs by arrival time (standard online VNE)
-        sorted_vnrs = sorted(vnrs, key=lambda v: v.arrival_time)
+        vnr_batch.sort_by_arrival_time()
+        sorted_vnrs = vnr_batch.vnrs
 
         results = []
         active_embeddings = []  # (vnr, result, departure_time)

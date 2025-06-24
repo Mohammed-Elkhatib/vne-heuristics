@@ -109,11 +109,13 @@ class RunCommand(BaseCommand):
                 base_name = filepath.replace('.csv', '') if filepath.endswith('.csv') else filepath
                 vnr_batch = VNRBatch.load_from_csv(base_name)
                 logger.info(f"Loaded VNR batch: {vnr_batch}")
-                return vnr_batch.vnrs  # Return the list of VNRs
+                return vnr_batch
 
             except (ImportError, AttributeError):
                 # Fallback: Load VNRs manually from CSV files
-                return self._load_vnrs_from_csv(filepath)
+                vnr_list = self._load_vnrs_from_csv(filepath)
+                from src.models.vnr_batch import VNRBatch
+                return VNRBatch(vnr_list, f"batch_{Path(filepath).stem}")
 
         except Exception as e:
             raise FileError(f"Failed to load VNR batch from {filepath}: {e}")
@@ -195,37 +197,37 @@ class RunCommand(BaseCommand):
                 algorithm=algorithm_name
             )
 
-    def _execute_algorithm(self, algorithm, vnrs, substrate, args):
+    def _execute_algorithm(self, algorithm, vnr_batch, substrate, args):
         """Execute algorithm with progress reporting."""
         mode = getattr(args, 'mode', 'batch')
 
-        logger.info(f"Running {algorithm.name} in {mode} mode on {len(vnrs)} VNRs")
+        logger.info(f"Running {algorithm.name} in {mode} mode on {len(vnr_batch)} VNRs")
         print(f"Running {algorithm.name} algorithm in {mode} mode...")
-        print(f"Processing {len(vnrs)} VNRs on substrate with {len(substrate.graph.nodes)} nodes...")
+        print(f"Processing {len(vnr_batch)} VNRs on substrate with {len(substrate.graph.nodes)} nodes...")
 
         # Setup progress reporting
         if getattr(args, 'progress', False) and self.progress_reporter:
-            self.progress_reporter.start(len(vnrs), f"Running {algorithm.name}")
+            self.progress_reporter.start(len(vnr_batch), f"Running {algorithm.name}")
 
         try:
             start_time = time.time()
 
             if mode == 'batch':
-                results = algorithm.embed_batch(vnrs, substrate)
+                results = algorithm.embed_batch(vnr_batch, substrate)
                 if getattr(args, 'progress', False) and self.progress_reporter:
                     # Manual progress update for batch mode
                     for i, result in enumerate(results):
                         if (i + 1) % 5 == 0 or (i + 1) == len(results):
                             self.progress_reporter.update(i + 1, len(results), f"Running {algorithm.name}")
             elif mode == 'online':
-                results = algorithm.embed_online(vnrs, substrate)
+                results = algorithm.embed_online(vnr_batch, substrate)
             else:
                 raise AlgorithmError(f"Unknown execution mode: {mode}")
 
             execution_time = time.time() - start_time
 
             if getattr(args, 'progress', False) and self.progress_reporter:
-                self.progress_reporter.finish(len(vnrs), f"Running {algorithm.name}")
+                self.progress_reporter.finish(len(vnr_batch), f"Running {algorithm.name}")
 
             logger.info(f"Algorithm execution completed in {execution_time:.2f} seconds")
             print(f"Algorithm execution completed in {execution_time:.2f} seconds")
@@ -236,7 +238,7 @@ class RunCommand(BaseCommand):
             raise AlgorithmError(
                 f"Algorithm execution failed: {e}",
                 algorithm=algorithm.name,
-                details=f"Mode: {mode}, VNRs: {len(vnrs)}"
+                details=f"Mode: {mode}, VNRs: {len(vnr_batch)}"
             )
 
     def _save_results(self, results, args):

@@ -12,6 +12,7 @@ import traceback
 import tempfile
 import json
 from pathlib import Path
+from src.utils.metrics import generate_comprehensive_metrics_summary
 
 # Configure logging
 logging.basicConfig(
@@ -377,7 +378,7 @@ def test_experiment_runner():
             
             # Test metrics calculation
             print("Testing metrics calculation...")
-            metrics = runner.calculate_metrics(mock_results, "test_algorithm")
+            metrics = generate_comprehensive_metrics_summary(mock_results)
             
             if 'primary_metrics' in metrics:
                 print("✅ Metrics calculated successfully")
@@ -530,8 +531,8 @@ def test_integration_with_existing_models():
             
             # 5. Save results and calculate metrics
             runner.save_results(algorithm_results, "integration_test_algorithm")
-            metrics = runner.calculate_metrics(algorithm_results, "integration_test_algorithm")
-            
+            metrics = generate_comprehensive_metrics_summary(algorithm_results)
+
             # 6. Finish experiment
             runner.finish_experiment()
             

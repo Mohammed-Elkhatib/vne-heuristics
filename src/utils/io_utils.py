@@ -389,7 +389,6 @@ class ExperimentRunner:
         >>> results = my_algorithm.run(substrate, vnr_batch)
         >>>
         >>> runner.save_results(results, "my_algorithm")
-        >>> metrics = runner.calculate_metrics(results)
         >>> runner.finish_experiment()
     """
 
@@ -455,33 +454,6 @@ class ExperimentRunner:
             ExperimentIOError: If save fails
         """
         return save_algorithm_results(results, self.experiment_dir, algorithm_name)
-
-    def calculate_metrics(self, results: List, algorithm_name: str) -> Dict[str, Any]:
-        """
-        Calculate and save metrics.
-
-        Args:
-            results: List of embedding results
-            algorithm_name: Name of the algorithm
-
-        Returns:
-            Metrics dictionary
-
-        Raises:
-            ExperimentIOError: If calculation fails
-        """
-        try:
-            from src.utils.metrics import generate_comprehensive_metrics_summary
-
-            metrics = generate_comprehensive_metrics_summary(results)
-            save_metrics_summary(metrics, self.experiment_dir, algorithm_name)
-
-            return metrics
-
-        except ImportError as e:
-            raise ExperimentIOError(f"Failed to import metrics module: {e}")
-        except Exception as e:
-            raise ExperimentIOError(f"Failed to calculate metrics: {e}")
 
     def finish_experiment(self) -> Dict[str, Any]:
         """

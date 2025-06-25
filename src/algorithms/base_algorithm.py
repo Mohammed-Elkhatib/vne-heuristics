@@ -18,7 +18,6 @@ from src.models.vnr_batch import VNRBatch
 from src.utils.metrics import (
     calculate_vnr_revenue,
     calculate_vnr_cost,
-    generate_comprehensive_metrics_summary
 )
 
 
@@ -59,26 +58,6 @@ class EmbeddingResult:
     algorithm_name: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
 
-    def to_metrics_result(self):
-        """
-        Convert to MetricsEmbeddingResult for compatibility with metrics utilities.
-
-        Returns:
-            MetricsEmbeddingResult instance
-        """
-        from src.utils.metrics import EmbeddingResult as MetricsEmbeddingResult
-        return MetricsEmbeddingResult(
-            vnr_id=self.vnr_id,
-            success=self.success,
-            revenue=self.revenue,
-            cost=self.cost,
-            execution_time=self.execution_time,
-            node_mapping=self.node_mapping,
-            link_mapping=self.link_mapping,
-            timestamp=self.timestamp,
-            failure_reason=self.failure_reason
-        )
-
 
 class VNEConstraintError(Exception):
     """Exception raised when VNE constraints are violated."""
@@ -102,7 +81,7 @@ class BaseAlgorithm(ABC):
 
     Subclasses must implement:
     - _embed_single_vnr(): Core embedding logic with resource allocation
-    - _cleanup_failed_embedding(): Rollback mechanism for failed embeddings
+    - _cleanup_embedding(): Rollback mechanism for failed embeddings
 
     Base class provides:
     - Standard VNE workflow and constraint validation
@@ -124,7 +103,7 @@ class BaseAlgorithm(ABC):
         ...         # Implementation with resource allocation
         ...         return EmbeddingResult(...)
         ...
-        ...     def _cleanup_failed_embedding(self, vnr, substrate, result):
+        ...     def _cleanup_embedding(self, vnr, substrate, result):
         ...         # Cleanup allocated resources
         ...         pass
         >>>
@@ -258,7 +237,7 @@ class BaseAlgorithm(ABC):
         Algorithm Responsibilities:
         1. Check resource availability during embedding process
         2. Allocate resources on successful mapping
-        3. Provide rollback mechanism via _cleanup_failed_embedding()
+        3. Provide rollback mechanism via _cleanup_embedding()
         4. Return EmbeddingResult with mappings and success status
 
         VNE Literature Standard:
@@ -275,12 +254,12 @@ class BaseAlgorithm(ABC):
 
         Note:
             Base class will validate VNE constraints (like Intra-VNR separation)
-            and call _cleanup_failed_embedding() if constraints are violated.
+            and call _cleanup_embedding() if constraints are violated.
         """
         pass
 
     @abstractmethod
-    def _cleanup_failed_embedding(self, vnr: VirtualNetworkRequest,
+    def _cleanup_embedding(self, vnr: VirtualNetworkRequest,
                                  substrate: SubstrateNetwork,
                                  result: EmbeddingResult) -> None:
         """
@@ -366,7 +345,7 @@ class BaseAlgorithm(ABC):
 
         for vnr in sorted_vnrs:
             # Advance simulation time to VNR arrival
-            current_time = vnr.arrival_time
+            current_time = max(current_time, vnr.arrival_time)
 
             # Check simulation duration limit
             if simulation_duration and current_time > simulation_duration:
@@ -381,6 +360,7 @@ class BaseAlgorithm(ABC):
             # Attempt to embed arriving VNR
             self.logger.debug(f"Processing VNR {vnr.vnr_id} at time {current_time}")
             result = self.embed_vnr(vnr, substrate)
+            current_time += result.execution_time
             results.append(result)
 
             # Track successful embeddings for later departure
@@ -393,33 +373,10 @@ class BaseAlgorithm(ABC):
         # Final cleanup: deallocate all remaining active VNRs
         for vnr, result, _ in active_embeddings:
             self.logger.debug(f"Final cleanup: deallocating VNR {vnr.vnr_id}")
-            self._cleanup_failed_embedding(vnr, substrate, result)
+            self._cleanup_embedding(vnr, substrate, result)
 
         self.logger.info(f"Online simulation completed: {len(results)} results")
         return results
-
-    def calculate_metrics(self, results: List[EmbeddingResult],
-                         substrate: Optional[SubstrateNetwork] = None) -> Dict[str, Any]:
-        """
-        Calculate comprehensive VNE metrics using standard literature formulas.
-
-        Uses the metrics module for standard calculations.
-
-        Args:
-            results: List of embedding results
-            substrate: Optional substrate for utilization metrics
-
-        Returns:
-            Comprehensive metrics dictionary
-        """
-        # Convert to metrics module format for compatibility
-        metrics_results = []
-        for result in results:
-            metrics_result = result.to_metrics_result()
-            metrics_results.append(metrics_result)
-
-        # Use existing comprehensive metrics calculation
-        return generate_comprehensive_metrics_summary(metrics_results, substrate)
 
     def get_algorithm_statistics(self) -> Dict[str, Any]:
         """
@@ -597,7 +554,7 @@ class BaseAlgorithm(ABC):
             if current_time >= departure_time:
                 # VNR has departed - deallocate resources
                 self.logger.debug(f"VNR {vnr.vnr_id} departing at time {current_time}")
-                self._cleanup_failed_embedding(vnr, substrate, result)
+                self._cleanup_embedding(vnr, substrate, result)
             else:
                 # VNR still active
                 still_active.append((vnr, result, departure_time))
@@ -613,7 +570,7 @@ class BaseAlgorithm(ABC):
         Called when VNE constraints are violated after successful algorithm embedding.
         """
         try:
-            self._cleanup_failed_embedding(vnr, substrate, result)
+            self._cleanup_embedding(vnr, substrate, result)
         except Exception as e:
             self.logger.error(f"Algorithm cleanup failed for VNR {vnr.vnr_id}: {e}")
 

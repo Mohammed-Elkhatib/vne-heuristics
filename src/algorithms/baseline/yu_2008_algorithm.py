@@ -225,7 +225,7 @@ class YuAlgorithm(BaseAlgorithm):
                 failure_reason=f"Algorithm exception: {str(e)}"
             )
 
-    def _cleanup_failed_embedding(self, vnr: VirtualNetworkRequest,
+    def _cleanup_embedding(self, vnr: VirtualNetworkRequest,
                                  substrate: SubstrateNetwork,
                                  result: EmbeddingResult) -> None:
         """

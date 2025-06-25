@@ -12,7 +12,7 @@ from src.algorithms.base_algorithm import BaseAlgorithm, EmbeddingResult, VNECon
 from src.algorithms.baseline.yu_2008_algorithm import YuAlgorithm
 from src.models.virtual_request import VirtualNetworkRequest
 from src.models.substrate import SubstrateNetwork
-from src.utils.metrics import calculate_vnr_revenue, calculate_vnr_cost
+from src.utils.metrics import calculate_vnr_revenue, calculate_vnr_cost, generate_comprehensive_metrics_summary
 from src.models.vnr_batch import VNRBatch
 
 
@@ -535,7 +535,7 @@ class TestYuAlgorithm(TestVNEAlgorithmBase):
         self.assertTrue(result.success)
 
         # Manually call cleanup (simulating base class constraint violation)
-        self.yu_algorithm._cleanup_failed_embedding(self.simple_vnr, self.substrate, result)
+        self.yu_algorithm._cleanup_embedding(self.simple_vnr, self.substrate, result)
 
         # Check that resources were deallocated
         for node_id in self.substrate.graph.nodes:
@@ -605,7 +605,7 @@ class MockAlgorithm(BaseAlgorithm):
             execution_time=0.001
         )
 
-    def _cleanup_failed_embedding(self, vnr, substrate, result):
+    def _cleanup_embedding(self, vnr, substrate, result):
         """Mock cleanup implementation."""
         # In a real algorithm, this would deallocate resources
         pass
@@ -622,8 +622,8 @@ class TestVNEAlgorithmIntegration(TestVNEAlgorithmBase):
         vnrs = [self.simple_vnr, self.complex_vnr]
         results = yu_algorithm.embed_batch(vnrs, self.substrate)
 
-        # Calculate metrics using base class method
-        metrics = yu_algorithm.calculate_metrics(results, self.substrate)
+        # Calculate metrics using metrics module
+        metrics = generate_comprehensive_metrics_summary(results, self.substrate)
 
         # Verify metrics structure
         self.assertIn('primary_metrics', metrics)

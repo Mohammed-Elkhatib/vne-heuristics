@@ -179,7 +179,7 @@ class AlgorithmRegistry:
                         failure_reason="Dummy algorithm - always fails"
                     )
 
-                def _cleanup_failed_embedding(self, vnr, substrate, result):
+                def _cleanup_embedding(self, vnr, substrate, result):
                     pass  # No cleanup needed for dummy
 
             self._algorithms['dummy'] = DummyAlgorithm
@@ -206,7 +206,7 @@ class AlgorithmRegistry:
                 obj is not BaseAlgorithm and
                 not inspect.isabstract(obj) and
                 hasattr(obj, '_embed_single_vnr') and
-                hasattr(obj, '_cleanup_failed_embedding')
+                hasattr(obj, '_cleanup_embedding')
             )
         except ImportError:
             self.logger.debug("BaseAlgorithm not available for validation")
